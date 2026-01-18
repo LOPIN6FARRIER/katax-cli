@@ -1,6 +1,6 @@
 {
   "name": "katax-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CLI tool to generate Express APIs with TypeScript and katax-core validation",
   "type": "module",
   "main": "dist/index.js",
