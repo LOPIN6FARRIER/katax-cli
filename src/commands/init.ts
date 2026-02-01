@@ -423,8 +423,8 @@ async function createProjectStructure(projectPath: string, config: ProjectConfig
     dirs.push('src/database');
   }
 
-  // Add default hola endpoint
-  dirs.push('src/api/hola');
+  // Add default hello endpoint
+  dirs.push('src/api/hello');
 
   for (const dir of dirs) {
     await ensureDir(path.join(projectPath, dir));
@@ -486,20 +486,24 @@ async function createProjectStructure(projectPath: string, config: ProjectConfig
     JSON.stringify(packageJson, null, 2)
   );
 
-  // Create tsconfig.json
+  // Create tsconfig.json - ESM optimized for Linux/Ubuntu deployment
   const tsConfig = {
     compilerOptions: {
-      target: 'es2016',
-      module: 'commonjs',
+      target: 'ES2022',
+      module: 'ES2022',
+      lib: ['ES2022'],
+      moduleResolution: 'node',
       sourceMap: true,
       outDir: './dist',
-      mapRoot: 'src',
+      rootDir: './src',
       esModuleInterop: true,
       forceConsistentCasingInFileNames: true,
       strict: true,
-      skipLibCheck: true
+      skipLibCheck: true,
+      resolveJsonModule: true,
+      declaration: true
     },
-    include: ['src'],
+    include: ['src/**/*'],
     exclude: ['node_modules', 'dist']
   };
 
@@ -593,6 +597,29 @@ coverage/
 
   await writeFile(path.join(projectPath, '.gitignore'), gitignoreContent);
 
+  // Create .gitattributes for consistent line endings across Windows/Linux
+  const gitattributesContent = `# Auto normalize line endings to LF on checkout (critical for Ubuntu deployment)
+* text=auto eol=lf
+
+# Explicit file types
+*.ts text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Binaries
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+`;
+
+  await writeFile(path.join(projectPath, '.gitattributes'), gitattributesContent);
+
   // Create index.ts
   const indexContent = `import app from './app.js';
 import dotenv from 'dotenv';
@@ -653,7 +680,7 @@ export default app;
 
   // Create routes.ts
   const routesContent = `import { Router } from 'express';
-import holaRouter from './hola/hola.routes.js';
+import helloRouter from './hello/hello.routes.js';
 import { healthCheckHandler } from './health/health.handler.js';
 
 const router = Router();
@@ -662,7 +689,7 @@ const router = Router();
 router.get('/health', healthCheckHandler);
 
 // Example endpoint
-router.use('/hola', holaRouter);
+router.use('/hello', helloRouter);
 
 export default router;
 `;
@@ -1301,38 +1328,38 @@ MIT
 
   await writeFile(path.join(projectPath, 'README.md'), readmeContent);
 
-  // Create default hola endpoint
-  await createHolaEndpoint(projectPath, config);
+  // Create default hello endpoint
+  await createHelloEndpoint(projectPath, config);
 }
 
-async function createHolaEndpoint(projectPath: string, config: ProjectConfig): Promise<void> {
-  const holaPath = path.join(projectPath, 'src/api/hola');
+async function createHelloEndpoint(projectPath: string, config: ProjectConfig): Promise<void> {
+  const helloPath = path.join(projectPath, 'src/api/hello');
 
-  // hola.controller.ts
+  // hello.controller.ts
   const controllerContent = [
     "import { ControllerResult, createSuccessResult, createErrorResult } from '../../shared/api.utils.js';",
-    "import { HolaQuery } from './hola.validator.js';",
+    "import { HelloQuery } from './hello.validator.js';",
     "import { logger } from '../../shared/logger.utils.js';",
     "",
     "/**",
-    " * Get hola message",
+    " * Get hello message",
     " */",
-    "export async function getHola(queryData: HolaQuery): Promise<ControllerResult<{ message: string; timestamp: string }>> {",
+    "export async function getHello(queryData: HelloQuery): Promise<ControllerResult<{ message: string; timestamp: string }>> {",
     "  try {",
     "    const name = queryData.name || 'World';",
-    "    logger.debug({ name }, 'Processing hola request');",
+    "    logger.debug({ name }, 'Processing hello request');",
     "    ",
     "    return createSuccessResult(",
-    "      'Hola endpoint working!',",
+    "      'Hello endpoint working!',",
     "      {",
-    "        message: `Hola ${name}! Welcome to your API 🚀`,",
+    "        message: `Hello ${name}! Welcome to your API 🚀`,",
     "        timestamp: new Date().toISOString()",
     "      }",
     "    );",
     "  } catch (error) {",
-    "    logger.error({ err: error }, 'Error in getHola controller');",
+    "    logger.error({ err: error }, 'Error in getHello controller');",
     "    return createErrorResult(",
-    "      'Failed to get hola message',",
+    "      'Failed to get hello message',",
     "      error instanceof Error ? error.message : 'Unknown error',",
     "      500",
     "    );",
@@ -1340,54 +1367,54 @@ async function createHolaEndpoint(projectPath: string, config: ProjectConfig): P
     "}"
   ].join('\n');
 
-  await writeFile(path.join(holaPath, 'hola.controller.ts'), controllerContent);
+  await writeFile(path.join(helloPath, 'hello.controller.ts'), controllerContent);
 
-  // hola.handler.ts
+  // hello.handler.ts
   const handlerContent = [
     "import { Request, Response } from 'express';",
-    "import { getHola } from './hola.controller.js';",
-    "import { validateHolaQuery } from './hola.validator.js';",
+    "import { getHello } from './hello.controller.js';",
+    "import { validateHelloQuery } from './hello.validator.js';",
     "import { sendResponse } from '../../shared/api.utils.js';",
     "",
     "// ==================== HANDLERS ====================",
     "",
     "/**",
-    " * Handler for GET /api/hola",
+    " * Handler for GET /api/hello",
     " * Uses sendResponse utility for automatic validation and response handling",
     " */",
-    "export async function getHolaHandler(req: Request, res: Response): Promise<void> {",
+    "export async function getHelloHandler(req: Request, res: Response): Promise<void> {",
     "  await sendResponse(",
     "    req,",
     "    res,",
-    "    // Validator returns Promise<ValidationResult<HolaQuery>>",
-    "    () => validateHolaQuery(req.query),",
-    "    // validData is automatically: HolaQuery (not any)",
-    "    (validData) => getHola(validData)",
+    "    // Validator returns Promise<ValidationResult<HelloQuery>>",
+    "    () => validateHelloQuery(req.query),",
+    "    // validData is automatically: HelloQuery (not any)",
+    "    (validData) => getHello(validData)",
     "  );",
     "}"
   ].join('\n');
 
-  await writeFile(path.join(holaPath, 'hola.handler.ts'), handlerContent);
+  await writeFile(path.join(helloPath, 'hello.handler.ts'), handlerContent);
 
-  // hola.routes.ts
+  // hello.routes.ts
   const routesContent = [
     "import { Router } from 'express';",
-    "import { getHolaHandler } from './hola.handler.js';",
+    "import { getHelloHandler } from './hello.handler.js';",
     "",
     "const router = Router();",
     "",
     "// ==================== ROUTES ====================",
     "",
     "/**",
-    " * @route GET /api/hola",
+    " * @route GET /api/hello",
     " * @desc Example endpoint - returns a greeting message",
     " */",
-    "router.get('/', getHolaHandler);",
+    "router.get('/', getHelloHandler);",
     "",
     "export default router;"
   ].join('\n');
 
-  await writeFile(path.join(holaPath, 'hola.routes.ts'), routesContent);
+  await writeFile(path.join(helloPath, 'hello.routes.ts'), routesContent);
 
   // Only create validator if katax-core is enabled
   if (config.validation === 'katax-core') {
@@ -1398,22 +1425,22 @@ async function createHolaEndpoint(projectPath: string, config: ProjectConfig): P
       "// ==================== SCHEMAS ====================",
       "",
       "/**",
-      " * Schema for hola query params",
+      " * Schema for hello query params",
       " */",
-      "export const holaQuerySchema = k.object({",
+      "export const helloQuerySchema = k.object({",
       "  name: k.string().minLength(2).optional()",
       "});",
       "",
       "/**",
       " * Inferred TypeScript type from schema",
       " */",
-      "export type HolaQuery = kataxInfer<typeof holaQuerySchema>;",
+      "export type HelloQuery = kataxInfer<typeof helloQuerySchema>;",
       "",
       "/**",
-      " * Validate hola query params",
+      " * Validate hello query params",
       " */",
-      "export async function validateHolaQuery(data: unknown): Promise<ValidationResult<HolaQuery>> {",
-      "  const result = holaQuerySchema.safeParse(data);",
+      "export async function validateHelloQuery(data: unknown): Promise<ValidationResult<HelloQuery>> {",
+      "  const result = helloQuerySchema.safeParse(data);",
       "",
       "  if (!result.success) {",
       "    const errors = result.issues.map(issue => ({",
@@ -1434,6 +1461,6 @@ async function createHolaEndpoint(projectPath: string, config: ProjectConfig): P
       "}"
     ].join('\n');
 
-    await writeFile(path.join(holaPath, 'hola.validator.ts'), validatorContent);
+    await writeFile(path.join(helloPath, 'hello.validator.ts'), validatorContent);
   }
 }
