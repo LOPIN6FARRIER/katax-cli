@@ -16,6 +16,13 @@ import { initCommand } from './commands/init.js';
 import { addEndpointCommand } from './commands/add-endpoint.js';
 import { generateCrudCommand } from './commands/generate-crud.js';
 import { infoCommand } from './commands/info.js';
+import { 
+  deployInitCommand, 
+  deployUpdateCommand, 
+  deployRollbackCommand,
+  deployLogsCommand,
+  deployStatusCommand 
+} from './commands/deploy.js';
 import { setVerbose, setColorMode } from './utils/logger.js';
 
 // Get version from package.json
@@ -62,6 +69,41 @@ generateCommand
   .option('--no-auth', 'Skip authentication middleware')
   .action(generateCrudCommand);
 
+// Deploy command - PM2 deployment on Ubuntu VPS
+const deployCommand = program
+  .command('deploy')
+  .description('Deploy and manage applications with PM2 on Ubuntu VPS');
+
+deployCommand
+  .command('init')
+  .description('Initial deployment - Clone repo and setup PM2')
+  .action(deployInitCommand);
+
+deployCommand
+  .command('update')
+  .description('Update existing deployment - Pull changes and restart')
+  .option('-b, --branch <branch>', 'Branch to deploy (default: current branch)')
+  .option('--hard', 'Hard reset - discard all local changes')
+  .action(deployUpdateCommand);
+
+deployCommand
+  .command('rollback')
+  .description('Rollback to previous version')
+  .option('-c, --commits <number>', 'Number of commits to rollback', '1')
+  .action(deployRollbackCommand);
+
+deployCommand
+  .command('logs')
+  .description('View PM2 application logs')
+  .option('-l, --lines <number>', 'Number of lines to display')
+  .option('-f, --follow', 'Follow log output')
+  .action(deployLogsCommand);
+
+deployCommand
+  .command('status')
+  .description('Show PM2 applications status')
+  .action(deployStatusCommand);
+
 // Info command - Show project structure
 program
   .command('info')
@@ -100,8 +142,13 @@ ${chalk.bold('Examples:')}
   ${chalk.gray('# View project structure')}
   $ katax info
 
-  ${chalk.gray('# Initialize with options')}
-  $ katax init my-api --force
+  ${chalk.gray('# Deploy to Ubuntu VPS with PM2')}
+  $ katax deploy init              # First time deployment
+  $ katax deploy update            # Update existing deployment
+  $ katax deploy update --hard     # Hard reset and update
+  $ katax deploy status            # Check PM2 status
+  $ katax deploy logs -f           # Follow logs
+  $ katax deploy rollback          # Rollback 1 commit
 
 ${chalk.bold('Documentation:')}
   ${chalk.cyan('https://github.com/LOPIN6FARRIER/katax-cli#readme')}

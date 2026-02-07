@@ -29,7 +29,7 @@ export function generateHandler(config: EndpointConfig): string {
       break;
   }
   
-  content += "import { sendResponse } from '../../shared/api.utils.js';\n\n";
+  content += "import { sendResponse, sendResult } from '../../shared/response.utils.js';\n\n";
   content += "// ==================== HANDLERS ====================\n\n";
 
   // Generate handler based on method
@@ -49,37 +49,56 @@ function generateHandlerFunction(
   let content = `/**\n * Handler for ${method} ${camelName}\n`;
   content += ` * Uses sendResponse utility for automatic validation and response handling\n */\n`;
   content += `export async function ${handlerName}(req: Request, res: Response): Promise<void> {\n`;
-  content += `  await sendResponse(\n`;
-  content += `    req,\n`;
-  content += `    res,\n`;
 
-  // Validator based on method
-  if (hasValidation && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-    content += `    () => validate${pascalName}(req.body),\n`;
-  } else if (method === 'GET' || method === 'DELETE') {
-    content += `    () => validate${pascalName}Id(req.params.id),\n`;
-  } else {
-    content += `    () => validate${pascalName}(req.body),\n`;
-  }
-
-  // Controller call based on method
   switch (method) {
     case 'POST':
-      content += `    (validData) => create${pascalName}(validData)\n`;
+      content += `  await sendResponse(req, res, {\n`;
+      if (hasValidation) {
+        content += `    validator: validate${pascalName},\n`;
+      }
+      content += `    controller: (data) => create${pascalName}(data),\n`;
+      content += `    dataSource: 'body',\n`;
+      content += `    successStatus: 201\n`;
+      content += `  });\n`;
       break;
+
     case 'GET':
-      content += `    (validData) => get${pascalName}(validData)\n`;
+      content += `  await sendResponse(req, res, {\n`;
+      if (hasValidation) {
+        content += `    validator: (data) => validate${pascalName}Id(data.id),\n`;
+      }
+      content += `    controller: (data) => get${pascalName}(data.id),\n`;
+      content += `    dataSource: 'params'\n`;
+      content += `  });\n`;
       break;
+
     case 'PUT':
     case 'PATCH':
-      content += `    (validData) => update${pascalName}(req.params.id, validData)\n`;
+      content += `  await sendResponse(req, res, {\n`;
+      if (hasValidation) {
+        content += `    validator: validate${pascalName},\n`;
+      }
+      content += `    controller: (data) => update${pascalName}(req.params.id, data),\n`;
+      content += `    dataSource: 'body'\n`;
+      content += `  });\n`;
       break;
+
     case 'DELETE':
-      content += `    (validData) => delete${pascalName}(validData)\n`;
+      content += `  await sendResponse(req, res, {\n`;
+      if (hasValidation) {
+        content += `    validator: (data) => validate${pascalName}Id(data.id),\n`;
+      }
+      content += `    controller: (data) => delete${pascalName}(data.id),\n`;
+      content += `    dataSource: 'params',\n`;
+      content += `    successStatus: 204\n`;
+      content += `  });\n`;
       break;
+
+    default:
+      content += `  // TODO: Implement handler for ${method}\n`;
+      content += `  res.status(501).json({ error: 'Not implemented' });\n`;
   }
   
-  content += `  );\n`;
   content += `}\n`;
   return content;
 }

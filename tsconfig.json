@@ -1,19 +1,33 @@
 {
   "compilerOptions": {
+    // Target ES2022 - Compatible with Node.js 18+ (Ubuntu LTS)
     "target": "ES2022",
     "module": "ESNext",
     "lib": ["ES2022"],
-    "moduleResolution": "bundler",
+    
+    // Use Node.js module resolution for VPS deployment
+    "moduleResolution": "node",
+    
+    // ES Module support
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
+    
+    // Strict type checking
     "strict": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "declaration": true,
-    "outDir": "./dist",
-    "rootDir": "./src",
     "forceConsistentCasingInFileNames": true,
-    "allowImportingTsExtensions": false
+    
+    // Module options
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": false,
+    
+    // Emit
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "removeComments": true,
+    "outDir": "./dist",
+    "rootDir": "./src"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

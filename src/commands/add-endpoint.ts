@@ -12,16 +12,11 @@ import {
 } from '../utils/logger.js';
 import {
   fileExists,
-  writeFile,
   toPascalCase,
   toCamelCase
 } from '../utils/file-utils.js';
 import { EndpointConfig, FieldConfig, ValidationRule } from '../types/index.js';
-import { generateValidator } from '../generators/validator-generator.js';
-import { generateController } from '../generators/controller-generator.js';
-import { generateHandler } from '../generators/handler-generator.js';
-import { generateRoute } from '../generators/route-generator.js';
-import { updateMainRouter } from '../generators/router-updater.js';
+import { codeGenerationService } from '../services/code-generation.service.js';
 
 interface AddEndpointOptions {
   method?: string;
@@ -220,40 +215,29 @@ export async function addEndpointCommand(name: string, options: AddEndpointOptio
     }
   }
 
-  // Generate files
+  // Generate files using new service
   const spinner = ora('Generating endpoint files...').start();
 
   try {
-    const basePath = path.join(process.cwd(), 'src', 'api', name.toLowerCase());
-
-    // Generate validator
-    if (config.addValidation) {
-      const validatorPath = path.join(basePath, `${name.toLowerCase()}.validator.ts`);
-      const validatorContent = generateValidator(config);
-      await writeFile(validatorPath, validatorContent);
-      spinner.text = `Generated ${name.toLowerCase()}.validator.ts`;
+    // Read database config from package.json if available
+    const packageJsonPath = path.join(process.cwd(), 'package.json');
+    let database: 'postgresql' | 'mysql' | 'mongodb' | undefined;
+    
+    try {
+      const packageJson = JSON.parse(await import('fs').then(fs => fs.promises.readFile(packageJsonPath, 'utf-8')));
+      if (packageJson.dependencies?.pg) database = 'postgresql';
+      else if (packageJson.dependencies?.mysql2) database = 'mysql';
+      else if (packageJson.dependencies?.mongodb) database = 'mongodb';
+    } catch (err) {
+      // No database detected
     }
 
-    // Generate controller
-    const controllerPath = path.join(basePath, `${name.toLowerCase()}.controller.ts`);
-    const controllerContent = generateController(config);
-    await writeFile(controllerPath, controllerContent);
-    spinner.text = `Generated ${name.toLowerCase()}.controller.ts`;
-
-    // Generate handler
-    const handlerPath = path.join(basePath, `${name.toLowerCase()}.handler.ts`);
-    const handlerContent = generateHandler(config);
-    await writeFile(handlerPath, handlerContent);
-    spinner.text = `Generated ${name.toLowerCase()}.handler.ts`;
-
-    // Generate route
-    const routePath = path.join(basePath, `${name.toLowerCase()}.routes.ts`);
-    const routeContent = generateRoute(config);
-    await writeFile(routePath, routeContent);
-    spinner.text = `Generated ${name.toLowerCase()}.routes.ts`;
-
-    // Update main router
-    await updateMainRouter(name, config);
+    const files = await codeGenerationService.generateEndpoint(
+      config,
+      process.cwd(),
+      database
+    );
+    
     spinner.succeed('Endpoint files generated');
 
     success(`\n✨ Endpoint "${name}" created successfully!\n`);
@@ -270,8 +254,8 @@ export async function addEndpointCommand(name: string, options: AddEndpointOptio
     gray(`  ${config.method} ${config.path}\n`);
 
   } catch (err) {
-    spinner.fail('Failed to generate endpoint');
-    error(err instanceof Error ? err.message : 'Unknown error');
+    error('Failed to add endpoint');
+    console.error(err);
     process.exit(1);
   }
 }

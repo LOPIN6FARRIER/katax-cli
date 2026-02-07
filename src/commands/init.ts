@@ -489,19 +489,33 @@ async function createProjectStructure(projectPath: string, config: ProjectConfig
   // Create tsconfig.json - ESM optimized for Linux/Ubuntu deployment
   const tsConfig = {
     compilerOptions: {
+      // Target ES2022 - Compatible with Node.js 18+ (Ubuntu LTS)
       target: 'ES2022',
-      module: 'ES2022',
+      module: 'ESNext',
       lib: ['ES2022'],
+      
+      // Use Node.js module resolution for VPS deployment
       moduleResolution: 'node',
-      sourceMap: true,
-      outDir: './dist',
-      rootDir: './src',
+      
+      // ES Module support (no require, pure import/export)
       esModuleInterop: true,
+      allowSyntheticDefaultImports: true,
       forceConsistentCasingInFileNames: true,
+      
+      // Strict type checking
       strict: true,
       skipLibCheck: true,
+      
+      // Module options
       resolveJsonModule: true,
-      declaration: true
+      
+      // Emit options - Optimized for production
+      declaration: true,
+      declarationMap: true,
+      sourceMap: true,
+      removeComments: true,
+      outDir: './dist',
+      rootDir: './src'
     },
     include: ['src/**/*'],
     exclude: ['node_modules', 'dist']
