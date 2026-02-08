@@ -1,48 +1,44 @@
-import chalk from 'chalk';
-import inquirer from 'inquirer';
-import ora from 'ora';
-import path from 'path';
-import crypto from 'crypto';
-import { execa } from 'execa';
-import { 
-  success, 
-  error, 
-  warning, 
-  gray, 
-  title, 
-  info 
-} from '../utils/logger.js';
+import chalk from "chalk";
+import inquirer from "inquirer";
+import ora from "ora";
+import path from "path";
+import crypto from "crypto";
+import { execa } from "execa";
+import { success, error, warning, gray, title, info } from "../utils/logger.js";
 import {
   directoryExists,
   ensureDir,
   writeFile,
-  copyTemplate
-} from '../utils/file-utils.js';
-import { ProjectConfig } from '../types/index.js';
+  copyTemplate,
+} from "../utils/file-utils.js";
+import { ProjectConfig } from "../types/index.js";
 
 interface InitOptions {
   force?: boolean;
 }
 
-export async function initCommand(projectName?: string, options: InitOptions = {}) {
-  title('🚀 Katax CLI - Initialize API Project');
+export async function initCommand(
+  projectName?: string,
+  options: InitOptions = {},
+) {
+  title("🚀 Katax CLI - Initialize API Project");
 
   // Determine project name
-  let finalProjectName: string = projectName || '';
+  let finalProjectName: string = projectName || "";
   if (!finalProjectName) {
     const answer = await inquirer.prompt([
       {
-        type: 'input',
-        name: 'projectName',
-        message: 'Project name:',
-        default: 'my-api',
+        type: "input",
+        name: "projectName",
+        message: "Project name:",
+        default: "my-api",
         validate: (input) => {
           if (!/^[a-z0-9-_]+$/i.test(input)) {
-            return 'Project name can only contain letters, numbers, hyphens, and underscores';
+            return "Project name can only contain letters, numbers, hyphens, and underscores";
           }
           return true;
-        }
-      }
+        },
+      },
     ]);
     finalProjectName = answer.projectName;
   }
@@ -52,145 +48,145 @@ export async function initCommand(projectName?: string, options: InitOptions = {
   // Check if directory exists
   if (directoryExists(projectPath) && !options.force) {
     error(`Directory "${finalProjectName}" already exists!`);
-    gray('Use --force to overwrite\n');
+    gray("Use --force to overwrite\n");
     process.exit(1);
   }
 
   // Interactive configuration
   const answers = await inquirer.prompt([
     {
-      type: 'input',
-      name: 'description',
-      message: 'Project description:',
-      default: 'REST API built with Express and TypeScript'
+      type: "input",
+      name: "description",
+      message: "Project description:",
+      default: "REST API built with Express and TypeScript",
     },
     {
-      type: 'list',
-      name: 'database',
-      message: 'Select database:',
+      type: "list",
+      name: "database",
+      message: "Select database:",
       choices: [
-        { name: 'PostgreSQL', value: 'postgresql' },
-        { name: 'MySQL', value: 'mysql' },
-        { name: 'MongoDB', value: 'mongodb' },
-        { name: 'None (no database)', value: 'none' }
+        { name: "PostgreSQL", value: "postgresql" },
+        { name: "MySQL", value: "mysql" },
+        { name: "MongoDB", value: "mongodb" },
+        { name: "None (no database)", value: "none" },
       ],
-      default: 'postgresql'
+      default: "postgresql",
     },
     {
-      type: 'list',
-      name: 'authentication',
-      message: 'Add authentication?',
+      type: "list",
+      name: "authentication",
+      message: "Add authentication?",
       choices: [
-        { name: 'JWT Authentication', value: 'jwt' },
-        { name: 'None', value: 'none' }
+        { name: "JWT Authentication", value: "jwt" },
+        { name: "None", value: "none" },
       ],
-      default: 'jwt'
+      default: "jwt",
     },
     {
-      type: 'confirm',
-      name: 'validation',
-      message: 'Use katax-core for validation?',
-      default: true
+      type: "confirm",
+      name: "validation",
+      message: "Use katax-core for validation?",
+      default: true,
     },
     {
-      type: 'input',
-      name: 'port',
-      message: 'Server port:',
-      default: '3000',
+      type: "input",
+      name: "port",
+      message: "Server port:",
+      default: "3000",
       validate: (input) => {
         const port = parseInt(input);
         if (isNaN(port) || port < 1 || port > 65535) {
-          return 'Port must be a number between 1 and 65535';
+          return "Port must be a number between 1 and 65535";
         }
         return true;
-      }
-    }
+      },
+    },
   ]);
 
   // Ask for database credentials if database is selected
   let dbConfig: any = {};
-  if (answers.database !== 'none') {
+  if (answers.database !== "none") {
     const dbQuestions: any[] = [];
-    
-    if (answers.database === 'postgresql' || answers.database === 'mysql') {
+
+    if (answers.database === "postgresql" || answers.database === "mysql") {
       dbQuestions.push(
         {
-          type: 'input',
-          name: 'host',
-          message: `${answers.database === 'postgresql' ? 'PostgreSQL' : 'MySQL'} host:`,
-          default: 'localhost'
+          type: "input",
+          name: "host",
+          message: `${answers.database === "postgresql" ? "PostgreSQL" : "MySQL"} host:`,
+          default: "localhost",
         },
         {
-          type: 'input',
-          name: 'port',
-          message: `${answers.database === 'postgresql' ? 'PostgreSQL' : 'MySQL'} port:`,
-          default: answers.database === 'postgresql' ? '5432' : '3306'
+          type: "input",
+          name: "port",
+          message: `${answers.database === "postgresql" ? "PostgreSQL" : "MySQL"} port:`,
+          default: answers.database === "postgresql" ? "5432" : "3306",
         },
         {
-          type: 'input',
-          name: 'user',
-          message: 'Database user:',
-          default: 'postgres'
+          type: "input",
+          name: "user",
+          message: "Database user:",
+          default: "postgres",
         },
         {
-          type: 'password',
-          name: 'password',
-          message: 'Database password:',
-          default: 'password'
+          type: "password",
+          name: "password",
+          message: "Database password:",
+          default: "password",
         },
         {
-          type: 'input',
-          name: 'database',
-          message: 'Database name:',
-          default: finalProjectName.toLowerCase().replace(/-/g, '_')
-        }
+          type: "input",
+          name: "database",
+          message: "Database name:",
+          default: finalProjectName.toLowerCase().replace(/-/g, "_"),
+        },
       );
-    } else if (answers.database === 'mongodb') {
+    } else if (answers.database === "mongodb") {
       dbQuestions.push(
         {
-          type: 'input',
-          name: 'host',
-          message: 'MongoDB host:',
-          default: 'localhost'
+          type: "input",
+          name: "host",
+          message: "MongoDB host:",
+          default: "localhost",
         },
         {
-          type: 'input',
-          name: 'port',
-          message: 'MongoDB port:',
-          default: '27017'
+          type: "input",
+          name: "port",
+          message: "MongoDB port:",
+          default: "27017",
         },
         {
-          type: 'input',
-          name: 'database',
-          message: 'Database name:',
-          default: finalProjectName.toLowerCase().replace(/-/g, '_')
+          type: "input",
+          name: "database",
+          message: "Database name:",
+          default: finalProjectName.toLowerCase().replace(/-/g, "_"),
         },
         {
-          type: 'confirm',
-          name: 'useAuth',
-          message: 'Use authentication?',
-          default: false
-        }
+          type: "confirm",
+          name: "useAuth",
+          message: "Use authentication?",
+          default: false,
+        },
       );
     }
-    
+
     dbConfig = await inquirer.prompt(dbQuestions);
-    
+
     // Ask for MongoDB credentials if authentication is enabled
-    if (answers.database === 'mongodb' && dbConfig.useAuth) {
+    if (answers.database === "mongodb" && dbConfig.useAuth) {
       const authConfig = await inquirer.prompt([
         {
-          type: 'input',
-          name: 'user',
-          message: 'MongoDB user:',
-          default: 'admin'
+          type: "input",
+          name: "user",
+          message: "MongoDB user:",
+          default: "admin",
         },
         {
-          type: 'password',
-          name: 'password',
-          message: 'MongoDB password:',
-          default: 'password'
-        }
+          type: "password",
+          name: "password",
+          message: "MongoDB password:",
+          default: "password",
+        },
       ]);
       dbConfig.user = authConfig.user;
       dbConfig.password = authConfig.password;
@@ -200,81 +196,83 @@ export async function initCommand(projectName?: string, options: InitOptions = {
   const config: ProjectConfig = {
     name: finalProjectName,
     description: answers.description,
-    type: 'rest-api',
+    type: "rest-api",
     typescript: true,
     database: answers.database,
     authentication: answers.authentication,
-    validation: answers.validation ? 'katax-core' : 'none',
-    orm: 'none',
+    validation: answers.validation ? "katax-core" : "none",
+    orm: "none",
     port: parseInt(answers.port),
-    dbConfig
+    dbConfig,
   };
 
   // Ask for JWT secret generation if JWT is enabled
   let generateJwtSecrets = false;
-  if (config.authentication === 'jwt') {
+  if (config.authentication === "jwt") {
     const jwtAnswer = await inquirer.prompt([
       {
-        type: 'confirm',
-        name: 'generate',
-        message: 'Generate JWT secrets automatically?',
-        default: true
-      }
+        type: "confirm",
+        name: "generate",
+        message: "Generate JWT secrets automatically?",
+        default: true,
+      },
     ]);
     generateJwtSecrets = jwtAnswer.generate;
   }
 
   // Display configuration
-  gray('\n📋 Project Configuration:');
+  gray("\n📋 Project Configuration:");
   gray(`  Name: ${config.name}`);
   gray(`  Database: ${config.database}`);
   gray(`  Auth: ${config.authentication}`);
   gray(`  Validation: ${config.validation}`);
   gray(`  Port: ${config.port}\n`);
 
-  const spinner = ora('Creating project structure...').start();
+  const spinner = ora("Creating project structure...").start();
 
   try {
     // Create project structure
     await createProjectStructure(projectPath, config, generateJwtSecrets);
-    spinner.succeed('Project structure created');
+    spinner.succeed("Project structure created");
 
     // Install dependencies
-    spinner.start('Installing dependencies...');
+    spinner.start("Installing dependencies...");
     await installDependencies(projectPath);
-    spinner.succeed('Dependencies installed');
+    spinner.succeed("Dependencies installed");
 
     success(`\n✨ Project "${finalProjectName}" created successfully!\n`);
-    
-    info('Next steps:');
+
+    info("Next steps:");
     gray(`  cd ${finalProjectName}`);
     gray(`  npm run dev\n`);
-    
-    info('Available commands:');
+
+    info("Available commands:");
     gray(`  katax add endpoint <name>    - Add a new endpoint`);
     gray(`  katax generate crud <name>   - Generate CRUD resource`);
     gray(`  katax info                   - Show project structure\n`);
-
   } catch (err) {
-    spinner.fail('Failed to create project');
-    error(err instanceof Error ? err.message : 'Unknown error');
+    spinner.fail("Failed to create project");
+    error(err instanceof Error ? err.message : "Unknown error");
     process.exit(1);
   }
 }
 
 async function installDependencies(projectPath: string): Promise<void> {
-  await execa('npm', ['install'], {
+  await execa("npm", ["install"], {
     cwd: projectPath,
-    stdio: 'ignore'
+    stdio: "ignore",
   });
 }
 
-async function createDatabaseConnection(projectPath: string, config: ProjectConfig): Promise<void> {
-  const destPath = path.join(projectPath, 'src/database/connection.ts');
-  
-  let content = '';
-  
-  if (config.database === 'postgresql') {
+async function createDatabaseConnection(
+  projectPath: string,
+  config: ProjectConfig,
+): Promise<void> {
+  const destPath = path.join(projectPath, "src/database/connection.ts");
+
+  let content = "";
+
+  if (config.database === "postgresql") {
     content = [
       "import { Pool } from 'pg';",
       "import dotenv from 'dotenv';",
@@ -327,9 +325,9 @@ async function createDatabaseConnection(projectPath: string, config: ProjectConf
       "  };",
       "  ",
       "  return client;",
-      "}"
-    ].join('\n');
-  } else if (config.database === 'mysql') {
+      "}",
+    ].join("\n");
+  } else if (config.database === "mysql") {
     content = [
       "import mysql from 'mysql2/promise';",
       "",
@@ -352,9 +350,9 @@ async function createDatabaseConnection(projectPath: string, config: ProjectConf
       "",
       "export async function getConnection() {",
       "  return await pool.getConnection();",
-      "}"
-    ].join('\n');
-  } else if (config.database === 'mongodb') {
+      "}",
+    ].join("\n");
+  } else if (config.database === "mongodb") {
     content = [
       "import { MongoClient, Db } from 'mongodb';",
       "",
@@ -401,30 +399,34 @@ async function createDatabaseConnection(projectPath: string, config: ProjectConf
       "  return db;",
       "}",
       "",
-      "export default { connect, disconnect, getDb };"
-    ].join('\n');
+      "export default { connect, disconnect, getDb };",
+    ].join("\n");
   }
-  
+
   await writeFile(destPath, content);
 }
 
-async function createProjectStructure(projectPath: string, config: ProjectConfig, generateJwtSecrets: boolean): Promise<void> {
+async function createProjectStructure(
+  projectPath: string,
+  config: ProjectConfig,
+  generateJwtSecrets: boolean,
+): Promise<void> {
   // Create directories
   const dirs = [
-    'src',
-    'src/api',
-    'src/config',
-    'src/middleware',
-    'src/shared',
-    'src/types'
+    "src",
+    "src/api",
+    "src/config",
+    "src/middleware",
+    "src/shared",
+    "src/types",
   ];
 
-  if (config.database !== 'none') {
-    dirs.push('src/database');
+  if (config.database !== "none") {
+    dirs.push("src/database");
   }
 
   // Add default hello endpoint
-  dirs.push('src/api/hello');
+  dirs.push("src/api/hello");
 
   for (const dir of dirs) {
     await ensureDir(path.join(projectPath, dir));
@@ -433,103 +435,101 @@ async function createProjectStructure(projectPath: string, config: ProjectConfig
   // Create package.json
   const packageJson = {
     name: config.name,
-    version: '1.0.0',
+    version: "1.0.0",
     description: config.description,
-    type: 'module',
-    main: 'dist/index.js',
+    type: "module",
+    main: "dist/index.js",
     scripts: {
-      dev: 'nodemon --watch src --exec tsx src/index.ts',
-      build: 'tsc',
-      start: 'node dist/index.js',
-      lint: 'eslint . --ext .ts',
-      format: 'prettier --write "src/**/*.ts"'
+      dev: "nodemon --watch src --exec tsx src/index.ts",
+      build: "tsc",
+      start: "node dist/index.js",
+      lint: "eslint . --ext .ts",
+      format: 'prettier --write "src/**/*.ts"',
     },
-    keywords: ['api', 'express', 'typescript'],
-    author: '',
-    license: 'MIT',
+    keywords: ["api", "express", "typescript"],
+    author: "",
+    license: "MIT",
     dependencies: {
-      express: '^4.18.2',
-      cors: '^2.8.5',
-      dotenv: '^16.3.1',
-      pino: '^8.17.2',
-      'pino-pretty': '^10.3.1',
-      ...(config.validation === 'katax-core' && { 'katax-core': '^1.5.0' }),
-      ...(config.authentication === 'jwt' && {
-        jsonwebtoken: '^9.0.2',
-        bcrypt: '^5.1.1'
+      express: "^4.18.2",
+      cors: "^2.8.5",
+      dotenv: "^16.3.1",
+      pino: "^8.17.2",
+      "pino-pretty": "^10.3.1",
+      ...(config.validation === "katax-core" && { "katax-core": "^1.5.0" }),
+      ...(config.authentication === "jwt" && {
+        jsonwebtoken: "^9.0.2",
+        bcrypt: "^5.1.1",
       }),
-      ...(config.database === 'postgresql' && { pg: '^8.11.3' }),
-      ...(config.database === 'mysql' && { mysql2: '^3.6.5' }),
-      ...(config.database === 'mongodb' && { mongodb: '^6.3.0' })
+      ...(config.database === "postgresql" && { pg: "^8.11.3" }),
+      ...(config.database === "mysql" && { mysql2: "^3.6.5" }),
+      ...(config.database === "mongodb" && { mongodb: "^6.3.0" }),
     },
     devDependencies: {
-      '@types/express': '^4.17.21',
-      '@types/cors': '^2.8.17',
-      '@types/node': '^22.10.5',
-      ...(config.authentication === 'jwt' && {
-        '@types/jsonwebtoken': '^9.0.5',
-        '@types/bcrypt': '^5.0.2'
+      "@types/express": "^4.17.21",
+      "@types/cors": "^2.8.17",
+      "@types/node": "^22.10.5",
+      ...(config.authentication === "jwt" && {
+        "@types/jsonwebtoken": "^9.0.5",
+        "@types/bcrypt": "^5.0.2",
       }),
-      ...(config.database === 'postgresql' && { '@types/pg': '^8.10.9' }),
-      typescript: '^5.3.3',
-      tsx: '^4.7.0',
-      nodemon: '^3.0.2',
-      eslint: '^8.56.0',
-      '@typescript-eslint/eslint-plugin': '^6.19.0',
-      '@typescript-eslint/parser': '^6.19.0',
-      prettier: '^3.2.4'
-    }
+      ...(config.database === "postgresql" && { "@types/pg": "^8.10.9" }),
+      typescript: "^5.3.3",
+      tsx: "^4.7.0",
+      nodemon: "^3.0.2",
+      eslint: "^8.56.0",
+      "@typescript-eslint/eslint-plugin": "^6.19.0",
+      "@typescript-eslint/parser": "^6.19.0",
+      prettier: "^3.2.4",
+    },
   };
 
   await writeFile(
-    path.join(projectPath, 'package.json'),
-    JSON.stringify(packageJson, null, 2)
+    path.join(projectPath, "package.json"),
+    JSON.stringify(packageJson, null, 2),
   );
 
   // Create tsconfig.json - ESM optimized for Linux/Ubuntu deployment
   const tsConfig = {
     compilerOptions: {
       // Target ES2022 - Compatible with Node.js 18+ (Ubuntu LTS)
-      target: 'ES2022',
-      module: 'ESNext',
-      lib: ['ES2022'],
-      
+      target: "ES2022",
+      module: "ESNext",
+      lib: ["ES2022"],
+
       // Use Node.js module resolution for VPS deployment
-      moduleResolution: 'node',
-      
+      moduleResolution: "node",
+
       // ES Module support (no require, pure import/export)
       esModuleInterop: true,
       allowSyntheticDefaultImports: true,
       forceConsistentCasingInFileNames: true,
-      
+
       // Strict type checking
       strict: true,
       skipLibCheck: true,
-      
+
       // Module options
       resolveJsonModule: true,
-      
+
       // Emit options - Optimized for production
-      declaration: true,
-      declarationMap: true,
       sourceMap: true,
       removeComments: true,
-      outDir: './dist',
-      rootDir: './src'
+      outDir: "./dist",
+      rootDir: "./src",
     },
-    include: ['src/**/*'],
-    exclude: ['node_modules', 'dist']
+    include: ["src/**/*"],
+    exclude: ["node_modules", "dist"],
   };
 
   await writeFile(
-    path.join(projectPath, 'tsconfig.json'),
-    JSON.stringify(tsConfig, null, 2)
+    path.join(projectPath, "tsconfig.json"),
+    JSON.stringify(tsConfig, null, 2),
   );
 
   // Create .env.example and .env
-  let databaseUrl = '';
-  let dbEnvVars = '';
-  if (config.database === 'postgresql' && config.dbConfig) {
+  let databaseUrl = "";
+  let dbEnvVars = "";
+  if (config.database === "postgresql" && config.dbConfig) {
     const { host, port, user, password, database } = config.dbConfig;
     databaseUrl = `DATABASE_URL=postgresql://${user}:${password}@${host}:${port}/${database}`;
     dbEnvVars = `DB_HOST=${host}
@@ -537,7 +537,7 @@ DB_PORT=${port}
 DB_NAME=${database}
 DB_USER=${user}
 DB_PASSWORD=${password}`;
-  } else if (config.database === 'mysql' && config.dbConfig) {
+  } else if (config.database === "mysql" && config.dbConfig) {
     const { host, port, user, password, database } = config.dbConfig;
     databaseUrl = `DATABASE_URL=mysql://${user}:${password}@${host}:${port}/${database}`;
     dbEnvVars = `DB_HOST=${host}
@@ -545,7 +545,7 @@ DB_PORT=${port}
 DB_NAME=${database}
 DB_USER=${user}
 DB_PASSWORD=${password}`;
-  } else if (config.database === 'mongodb' && config.dbConfig) {
+  } else if (config.database === "mongodb" && config.dbConfig) {
     const { host, port, database, user, password } = config.dbConfig;
     if (user && password) {
       databaseUrl = `DATABASE_URL=mongodb://${user}:${password}@${host}:${port}/${database}`;
@@ -563,11 +563,11 @@ DB_NAME=${database}`;
   }
 
   // Generate JWT secrets if needed
-  let jwtConfig = '';
-  if (config.authentication === 'jwt') {
+  let jwtConfig = "";
+  if (config.authentication === "jwt") {
     if (generateJwtSecrets) {
-      const jwtSecret = crypto.randomBytes(64).toString('hex');
-      const jwtRefreshSecret = crypto.randomBytes(64).toString('hex');
+      const jwtSecret = crypto.randomBytes(64).toString("hex");
+      const jwtRefreshSecret = crypto.randomBytes(64).toString("hex");
       jwtConfig = `JWT_SECRET=${jwtSecret}
 JWT_EXPIRES_IN=24h
 JWT_REFRESH_SECRET=${jwtRefreshSecret}
@@ -590,14 +590,14 @@ ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 
 # Database Configuration
   ${databaseUrl}
-  ${dbEnvVars ? '\n# DB connection variables for pool\n' + dbEnvVars : ''}
+  ${dbEnvVars ? "\n# DB connection variables for pool\n" + dbEnvVars : ""}
 
 # JWT Configuration
 ${jwtConfig}
 `;
 
-  await writeFile(path.join(projectPath, '.env.example'), envContent);
-  await writeFile(path.join(projectPath, '.env'), envContent);
+  await writeFile(path.join(projectPath, ".env.example"), envContent);
+  await writeFile(path.join(projectPath, ".env"), envContent);
 
   // Create .gitignore
   const gitignoreContent = `node_modules/
@@ -609,7 +609,7 @@ coverage/
 .vscode/
 `;
 
-  await writeFile(path.join(projectPath, '.gitignore'), gitignoreContent);
+  await writeFile(path.join(projectPath, ".gitignore"), gitignoreContent);
 
   // Create .gitattributes for consistent line endings across Windows/Linux
   const gitattributesContent = `# Auto normalize line endings to LF on checkout (critical for Ubuntu deployment)
@@ -632,7 +632,10 @@ coverage/
 *.pdf binary
 `;
 
-  await writeFile(path.join(projectPath, '.gitattributes'), gitattributesContent);
+  await writeFile(
+    path.join(projectPath, ".gitattributes"),
+    gitattributesContent,
+  );
 
   // Create index.ts
   const indexContent = `import app from './app.js';
@@ -654,7 +657,7 @@ app.listen(PORT, () => {
 });
 `;
 
-  await writeFile(path.join(projectPath, 'src/index.ts'), indexContent);
+  await writeFile(path.join(projectPath, "src/index.ts"), indexContent);
 
   // Create app.ts
   const appContent = `import express from 'express';
@@ -690,7 +693,7 @@ app.use(errorMiddleware);
 export default app;
 `;
 
-  await writeFile(path.join(projectPath, 'src/app.ts'), appContent);
+  await writeFile(path.join(projectPath, "src/app.ts"), appContent);
 
   // Create routes.ts
   const routesContent = `import { Router } from 'express';
@@ -708,7 +711,7 @@ router.use('/hello', helloRouter);
 export default router;
 `;
 
-  await writeFile(path.join(projectPath, 'src/api/routes.ts'), routesContent);
+  await writeFile(path.join(projectPath, "src/api/routes.ts"), routesContent);
 
   // Create error middleware
   const errorMiddlewareContent = `import { Request, Response, NextFunction } from 'express';
@@ -746,17 +749,17 @@ export function errorMiddleware(
 `;
 
   await writeFile(
-    path.join(projectPath, 'src/middleware/error.middleware.ts'),
-    errorMiddlewareContent
+    path.join(projectPath, "src/middleware/error.middleware.ts"),
+    errorMiddlewareContent,
   );
 
   // Create database connection if database is selected
-  if (config.database !== 'none') {
+  if (config.database !== "none") {
     await createDatabaseConnection(projectPath, config);
   }
 
   // Create shared utilities
-  if (config.validation === 'katax-core') {
+  if (config.validation === "katax-core") {
     const apiUtilsContent = `import { Request, Response } from 'express';
 import { logger } from './logger.utils.js';
 
@@ -857,13 +860,13 @@ export async function sendResponse<TValidation = any, TResponse = any>(
 `;
 
     await writeFile(
-      path.join(projectPath, 'src/shared/api.utils.ts'),
-      apiUtilsContent
+      path.join(projectPath, "src/shared/api.utils.ts"),
+      apiUtilsContent,
     );
   }
 
   // Create JWT utilities if JWT authentication is selected
-  if (config.authentication === 'jwt') {
+  if (config.authentication === "jwt") {
     const jwtUtilsContent = `import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
 
@@ -1019,8 +1022,8 @@ export function requireRole(...roles: string[]) {
 `;
 
     await writeFile(
-      path.join(projectPath, 'src/shared/jwt.utils.ts'),
-      jwtUtilsContent
+      path.join(projectPath, "src/shared/jwt.utils.ts"),
+      jwtUtilsContent,
     );
   }
 
@@ -1098,8 +1101,8 @@ export function logDebug(message: string, data?: Record<string, any>): void {
 `;
 
   await writeFile(
-    path.join(projectPath, 'src/shared/logger.utils.ts'),
-    loggerUtilsContent
+    path.join(projectPath, "src/shared/logger.utils.ts"),
+    loggerUtilsContent,
   );
 
   // Create logger middleware
@@ -1123,8 +1126,8 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
 `;
 
   await writeFile(
-    path.join(projectPath, 'src/middleware/logger.middleware.ts'),
-    loggerMiddlewareContent
+    path.join(projectPath, "src/middleware/logger.middleware.ts"),
+    loggerMiddlewareContent,
   );
 
   // Create CORS configuration
@@ -1153,8 +1156,8 @@ export const corsOptions: CorsOptions = {
 `;
 
   await writeFile(
-    path.join(projectPath, 'src/config/cors.config.ts'),
-    corsConfigContent
+    path.join(projectPath, "src/config/cors.config.ts"),
+    corsConfigContent,
   );
 
   // Create environment validator
@@ -1173,7 +1176,7 @@ export function validateEnvironment(): void {
     NODE_ENV: process.env.NODE_ENV || ''
   };
 
-${config.database !== 'none' ? `  // Database variables\n  required.DATABASE_URL = process.env.DATABASE_URL || '';\n` : ''}${config.authentication === 'jwt' ? `  // JWT variables\n  required.JWT_SECRET = process.env.JWT_SECRET || '';\n  required.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || '';\n` : ''}
+${config.database !== "none" ? `  // Database variables\n  required.DATABASE_URL = process.env.DATABASE_URL || '';\n` : ""}${config.authentication === "jwt" ? `  // JWT variables\n  required.JWT_SECRET = process.env.JWT_SECRET || '';\n  required.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || '';\n` : ""}
   const missing: string[] = [];
 
   for (const [key, value] of Object.entries(required)) {
@@ -1193,8 +1196,8 @@ ${config.database !== 'none' ? `  // Database variables\n  required.DATABASE_URL
 `;
 
   await writeFile(
-    path.join(projectPath, 'src/config/env.validator.ts'),
-    envValidatorContent
+    path.join(projectPath, "src/config/env.validator.ts"),
+    envValidatorContent,
   );
 
   // Create health check handler
@@ -1271,10 +1274,10 @@ function formatBytes(bytes: number): string {
 }
 `;
 
-  await ensureDir(path.join(projectPath, 'src/api/health'));
+  await ensureDir(path.join(projectPath, "src/api/health"));
   await writeFile(
-    path.join(projectPath, 'src/api/health/health.handler.ts'),
-    healthHandlerContent
+    path.join(projectPath, "src/api/health/health.handler.ts"),
+    healthHandlerContent,
   );
 
   // Create README.md
@@ -1313,7 +1316,7 @@ src/
 
 - **Express** - Web framework
 - **TypeScript** - Type safety
-${config.validation === 'katax-core' ? '- **katax-core** - Schema validation\n' : ''}${config.authentication === 'jwt' ? '- **JWT** - Authentication\n' : ''}${config.database !== 'none' ? `- **${config.database}** - Database\n` : ''}
+${config.validation === "katax-core" ? "- **katax-core** - Schema validation\n" : ""}${config.authentication === "jwt" ? "- **JWT** - Authentication\n" : ""}${config.database !== "none" ? `- **${config.database}** - Database\n` : ""}
 ## 📚 API Documentation
 
 Server runs on \`http://localhost:${config.port}\`
@@ -1340,14 +1343,17 @@ katax generate crud products
 MIT
 `;
 
-  await writeFile(path.join(projectPath, 'README.md'), readmeContent);
+  await writeFile(path.join(projectPath, "README.md"), readmeContent);
 
   // Create default hello endpoint
   await createHelloEndpoint(projectPath, config);
 }
 
-async function createHelloEndpoint(projectPath: string, config: ProjectConfig): Promise<void> {
-  const helloPath = path.join(projectPath, 'src/api/hello');
+async function createHelloEndpoint(
+  projectPath: string,
+  config: ProjectConfig,
+): Promise<void> {
+  const helloPath = path.join(projectPath, "src/api/hello");
 
   // hello.controller.ts
   const controllerContent = [
@@ -1378,10 +1384,13 @@ async function createHelloEndpoint(projectPath: string, config: ProjectConfig): 
     "      500",
     "    );",
     "  }",
-    "}"
-  ].join('\n');
+    "}",
+  ].join("\n");
 
-  await writeFile(path.join(helloPath, 'hello.controller.ts'), controllerContent);
+  await writeFile(
+    path.join(helloPath, "hello.controller.ts"),
+    controllerContent,
+  );
 
   // hello.handler.ts
   const handlerContent = [
@@ -1405,10 +1414,10 @@ async function createHelloEndpoint(projectPath: string, config: ProjectConfig): 
     "    // validData is automatically: HelloQuery (not any)",
     "    (validData) => getHello(validData)",
     "  );",
-    "}"
-  ].join('\n');
+    "}",
+  ].join("\n");
 
-  await writeFile(path.join(helloPath, 'hello.handler.ts'), handlerContent);
+  await writeFile(path.join(helloPath, "hello.handler.ts"), handlerContent);
 
   // hello.routes.ts
   const routesContent = [
@@ -1425,13 +1434,13 @@ async function createHelloEndpoint(projectPath: string, config: ProjectConfig): 
     " */",
     "router.get('/', getHelloHandler);",
     "",
-    "export default router;"
-  ].join('\n');
+    "export default router;",
+  ].join("\n");
 
-  await writeFile(path.join(helloPath, 'hello.routes.ts'), routesContent);
+  await writeFile(path.join(helloPath, "hello.routes.ts"), routesContent);
 
   // Only create validator if katax-core is enabled
-  if (config.validation === 'katax-core') {
+  if (config.validation === "katax-core") {
     const validatorContent = [
       "import { k, kataxInfer } from 'katax-core';",
       "import type { ValidationResult } from '../../shared/api.utils.js';",
@@ -1472,9 +1481,12 @@ async function createHelloEndpoint(projectPath: string, config: ProjectConfig): 
       "    isValid: true,",
       "    data: result.data",
       "  };",
-      "}"
-    ].join('\n');
+      "}",
+    ].join("\n");
 
-    await writeFile(path.join(helloPath, 'hello.validator.ts'), validatorContent);
+    await writeFile(
+      path.join(helloPath, "hello.validator.ts"),
+      validatorContent,
+    );
   }
 }
