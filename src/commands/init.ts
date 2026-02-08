@@ -453,7 +453,7 @@ async function createProjectStructure(projectPath: string, config: ProjectConfig
       dotenv: '^16.3.1',
       pino: '^8.17.2',
       'pino-pretty': '^10.3.1',
-      ...(config.validation === 'katax-core' && { 'katax-core': '^1.1.0' }),
+      ...(config.validation === 'katax-core' && { 'katax-core': '^1.5.0' }),
       ...(config.authentication === 'jwt' && {
         jsonwebtoken: '^9.0.2',
         bcrypt: '^5.1.1'

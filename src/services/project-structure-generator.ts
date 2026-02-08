@@ -317,7 +317,7 @@ export class ProjectStructureGenerator {
         dotenv: '^16.3.1',
         pino: '^8.17.2',
         'pino-pretty': '^10.3.1',
-        ...(this.config.validation === 'katax-core' && { 'katax-core': '^1.1.0' }),
+        ...(this.config.validation === 'katax-core' && { 'katax-core': '^1.5.0' }),
         ...(this.config.authentication === 'jwt' && {
           jsonwebtoken: '^9.0.2',
           bcrypt: '^5.1.1'
