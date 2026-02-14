@@ -1455,7 +1455,7 @@ ${config.database !== "none" ? `  // Database variables\n  required.DATABASE_URL
 
   if (missing.length > 0) {
     logger.error({message:\`Missing required environment variables: \${missing.join(', ')}\`});
-    logger.error('Please check your .env file');
+    logger.error({message:'Please check your .env file'});
   }
 
   logger.info({message:'Environment variables validated successfully'});
@@ -1716,7 +1716,7 @@ async function createHelloEndpoint(
     "export async function getHello(queryData: HelloQuery): Promise<ControllerResult<{ message: string; timestamp: string }>> {",
     "  try {",
     "    const name = queryData.name || 'World';",
-    "    logger.debug({ name }, 'Processing hello request');",
+    "    logger.debug({ name, message: 'Processing hello request' });",
     "    ",
     "    return createSuccessResult(",
     "      'Hello endpoint working!',",
@@ -1726,7 +1726,7 @@ async function createHelloEndpoint(
     "      }",
     "    );",
     "  } catch (error) {",
-    "    logger.error({ err: error }, 'Error in getHello controller');",
+    "    logger.error({ err: error, message: 'Error in getHello controller' });",
     "    return createErrorResult(",
     "      'Failed to get hello message',",
     "      error instanceof Error ? error.message : 'Unknown error',",
