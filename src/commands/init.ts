@@ -326,7 +326,9 @@ export async function initCommand(
   );
   if (config.useKataxServiceManager) {
     gray(`  Redis Cache: ${config.useRedis ? "Yes" : "No"}`);
-    gray(`  WebSocket: ${config.useWebSocket ? (config.useSeparateSocketPort ? `Yes (port ${config.socketPort})` : "Yes (shared port)") : "No"}`);
+    gray(
+      `  WebSocket: ${config.useWebSocket ? (config.useSeparateSocketPort ? `Yes (port ${config.socketPort})` : "Yes (shared port)") : "No"}`,
+    );
   }
   gray(`  Git: ${config.initGit ? "Yes" : "No"}`);
   gray(`  Port: ${config.port}\n`);

@@ -13,6 +13,7 @@ import { writeFile } from "../utils/file-utils.js";
 interface GenerateDocsOptions {
   force?: boolean;
   output?: string;
+  port?: string;
 }
 
 /**
@@ -135,9 +136,23 @@ export async function generateDocsCommand(
       }`,
     );
 
+    // Get port: from option, then .env, then default 3000
+    let port = options.port;
+    if (!port) {
+      const envPath = path.join(projectPath, ".env");
+      if (existsSync(envPath)) {
+        const envContent = readFileSync(envPath, "utf-8");
+        const portMatch = envContent.match(/^PORT\s*=\s*(\d+)/m);
+        if (portMatch) {
+          port = portMatch[1];
+        }
+      }
+    }
+    port = port || "3000";
+
     info(`\n📖 View documentation:`);
     info(
-      `   ${chalk.cyan("npm run dev")} then open ${chalk.green("http://localhost:3000/docs")}`,
+      `   ${chalk.cyan("npm run dev")} then open ${chalk.green(`http://localhost:${port}/docs`)}`,
     );
     info(
       `\n📄 OpenAPI spec: ${chalk.gray(path.relative(projectPath, outputPath))}\n`,

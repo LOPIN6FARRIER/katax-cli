@@ -310,7 +310,7 @@ export class ProjectStructureGenerator {
       main: "dist/index.js",
       scripts: {
         dev: "nodemon --watch src --exec tsx src/index.ts",
-        build: "tsc",
+        build: "tsc && copyfiles -u 1 src/openapi.json dist",
         start: "node dist/index.js",
         "type-check": "tsc --noEmit",
       },
@@ -348,6 +348,7 @@ export class ProjectStructureGenerator {
         typescript: "^5.3.3",
         tsx: "^4.19.2",
         nodemon: "^3.1.7",
+        copyfiles: "^2.4.1",
       },
     };
 
