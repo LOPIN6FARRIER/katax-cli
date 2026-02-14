@@ -1,0 +1,283 @@
+import chalk from "chalk";
+import ora from "ora";
+import { existsSync, readFileSync, writeFileSync } from "fs";
+import path from "path";
+import { OpenAPIGenerator } from "../services/openapi-generator.service.js";
+import {
+  generateSwaggerSetup,
+  generateSwaggerReadme,
+} from "../templates/generators/swagger-template.js";
+import { success, error, warning, info, title } from "../utils/logger.js";
+import { writeFile } from "../utils/file-utils.js";
+
+interface GenerateDocsOptions {
+  force?: boolean;
+  output?: string;
+}
+
+/**
+ * Auto-regenerate documentation silently (for use after CRUD/endpoint generation)
+ */
+export async function autoRegenerateDocs(
+  projectPath: string = process.cwd(),
+): Promise<void> {
+  try {
+    // Check if project has API directory
+    const apiPath = path.join(projectPath, "src", "api");
+    if (!existsSync(apiPath)) {
+      return; // Skip if no API structure
+    }
+
+    // Generate OpenAPI spec
+    const generator = new OpenAPIGenerator(projectPath);
+    const spec = await generator.generate();
+
+    // Enhance with package.json info
+    const packageJsonPath = path.join(projectPath, "package.json");
+    if (existsSync(packageJsonPath)) {
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+      spec.info.title = packageJson.name || spec.info.title;
+      spec.info.version = packageJson.version || spec.info.version;
+      spec.info.description = packageJson.description || spec.info.description;
+    }
+
+    // Write OpenAPI spec
+    const outputPath = path.join(projectPath, "src", "openapi.json");
+    await writeFile(outputPath, JSON.stringify(spec, null, 2));
+
+    info(
+      `📖 API documentation updated (${Object.values(spec.paths).reduce(
+        (count: number, methods: any) => count + Object.keys(methods).length,
+        0,
+      )} endpoints)`,
+    );
+  } catch (err) {
+    // Silent fail - documentation generation should not block main operations
+  }
+}
+
+/**
+ * Generate API documentation (Swagger/OpenAPI)
+ */
+export async function generateDocsCommand(
+  options: GenerateDocsOptions = {},
+): Promise<void> {
+  title("📖 Generate API Documentation");
+
+  const projectPath = process.cwd();
+
+  // Check if it's a valid project
+  if (!existsSync(path.join(projectPath, "src"))) {
+    error("Not a valid project! Run this command from your API project root.");
+    info('Must have a "src" directory with API structure.');
+    process.exit(1);
+  }
+
+  // Check for API directory
+  const apiPath = path.join(projectPath, "src", "api");
+  if (!existsSync(apiPath)) {
+    warning("No API routes found in src/api directory.");
+    info("Generate some endpoints first:");
+    info(`  ${chalk.cyan("katax generate crud users")}`);
+    info(`  ${chalk.cyan("katax add endpoint products")}`);
+    process.exit(1);
+  }
+
+  const spinner = ora("Scanning project structure...").start();
+
+  try {
+    // Generate OpenAPI spec
+    const generator = new OpenAPIGenerator(projectPath);
+    const spec = await generator.generate();
+
+    spinner.text = "Generating OpenAPI specification...";
+
+    // Enhance spec with project info if package.json exists
+    const packageJsonPath = path.join(projectPath, "package.json");
+    if (existsSync(packageJsonPath)) {
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+      spec.info.title = packageJson.name || spec.info.title;
+      spec.info.version = packageJson.version || spec.info.version;
+      spec.info.description = packageJson.description || spec.info.description;
+    }
+
+    // Write OpenAPI spec
+    const outputPath =
+      options.output || path.join(projectPath, "src", "openapi.json");
+    await writeFile(outputPath, JSON.stringify(spec, null, 2));
+
+    spinner.succeed("OpenAPI specification generated");
+
+    // Setup Swagger UI (if not already setup)
+    await setupSwaggerUI(projectPath, options.force);
+
+    // Summary
+    success("\n✅ API Documentation generated successfully!\n");
+
+    // Count endpoints
+    const endpointCount = Object.values(spec.paths).reduce(
+      (count: number, methods: any) => count + Object.keys(methods).length,
+      0,
+    );
+
+    info(`📊 Documentation Stats:`);
+    info(`   ${chalk.cyan("Endpoints:")} ${endpointCount}`);
+    info(
+      `   ${chalk.cyan("Schemas:")} ${Object.keys(spec.components?.schemas || {}).length}`,
+    );
+    info(
+      `   ${chalk.cyan("Tags:")} ${
+        new Set(
+          Object.values(spec.paths).flatMap((methods: any) =>
+            Object.values(methods).flatMap((method: any) => method.tags || []),
+          ),
+        ).size
+      }`,
+    );
+
+    info(`\n📖 View documentation:`);
+    info(
+      `   ${chalk.cyan("npm run dev")} then open ${chalk.green("http://localhost:3000/docs")}`,
+    );
+    info(
+      `\n📄 OpenAPI spec: ${chalk.gray(path.relative(projectPath, outputPath))}\n`,
+    );
+  } catch (err: any) {
+    spinner.fail("Failed to generate documentation");
+    error(err.message);
+    if (err.stack) {
+      console.error(chalk.gray(err.stack));
+    }
+    process.exit(1);
+  }
+}
+
+/**
+ * Setup Swagger UI in the project
+ */
+async function setupSwaggerUI(
+  projectPath: string,
+  force: boolean = false,
+): Promise<void> {
+  const configDir = path.join(projectPath, "src", "config");
+  const swaggerConfigPath = path.join(configDir, "swagger.config.ts");
+
+  // Check if already exists
+  if (existsSync(swaggerConfigPath) && !force) {
+    info("✓ Swagger UI already configured");
+    return;
+  }
+
+  const spinner = ora("Setting up Swagger UI...").start();
+
+  try {
+    // Create swagger config
+    await writeFile(swaggerConfigPath, generateSwaggerSetup());
+
+    // Update app.ts to include swagger
+    const appPath = path.join(projectPath, "src", "app.ts");
+    if (existsSync(appPath)) {
+      let appContent = readFileSync(appPath, "utf-8");
+
+      // Check if swagger is already imported
+      if (!appContent.includes("setupSwagger")) {
+        // Add import
+        const importLine =
+          "import { setupSwagger } from './config/swagger.config.js';\n";
+
+        // Find where to insert import (after other imports)
+        const lastImportIndex = appContent.lastIndexOf("import ");
+        const endOfLastImport = appContent.indexOf("\n", lastImportIndex);
+
+        if (endOfLastImport !== -1) {
+          appContent =
+            appContent.slice(0, endOfLastImport + 1) +
+            importLine +
+            appContent.slice(endOfLastImport + 1);
+        }
+
+        // Add swagger setup call (before routes or at end of middleware)
+        const setupLine = "\n// API Documentation\nsetupSwagger(app);\n";
+
+        // Try to find where to insert (before routes or error handler)
+        let insertIndex = appContent.indexOf("// Routes");
+        if (insertIndex === -1) {
+          insertIndex = appContent.indexOf("// Error");
+        }
+        if (insertIndex === -1) {
+          // Insert before export
+          insertIndex = appContent.indexOf("export default app");
+        }
+
+        if (insertIndex !== -1) {
+          appContent =
+            appContent.slice(0, insertIndex) +
+            setupLine +
+            appContent.slice(insertIndex);
+        }
+
+        writeFileSync(appPath, appContent, "utf-8");
+      }
+    }
+
+    // Create docs README
+    const docsReadmePath = path.join(projectPath, "DOCS.md");
+    if (!existsSync(docsReadmePath) || force) {
+      await writeFile(docsReadmePath, generateSwaggerReadme());
+    }
+
+    // Update package.json to include swagger-ui-express
+    await updatePackageJsonDependencies(projectPath);
+
+    spinner.succeed("Swagger UI configured");
+
+    warning("\n⚠️  Install required dependency:");
+    info(`   ${chalk.cyan("npm install swagger-ui-express")}`);
+    info(`   ${chalk.cyan("npm install -D @types/swagger-ui-express")}`);
+  } catch (err: any) {
+    spinner.fail("Failed to setup Swagger UI");
+    throw err;
+  }
+}
+
+/**
+ * Update package.json with swagger dependencies
+ */
+async function updatePackageJsonDependencies(
+  projectPath: string,
+): Promise<void> {
+  const packageJsonPath = path.join(projectPath, "package.json");
+
+  if (!existsSync(packageJsonPath)) {
+    return;
+  }
+
+  try {
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+
+    // Check if swagger-ui-express is already in dependencies
+    const hasSwagger =
+      packageJson.dependencies?.["swagger-ui-express"] ||
+      packageJson.devDependencies?.["swagger-ui-express"];
+
+    if (!hasSwagger) {
+      // Add a note in package.json (user still needs to npm install)
+      if (!packageJson.scripts) {
+        packageJson.scripts = {};
+      }
+
+      // Add script for regenerating docs
+      if (!packageJson.scripts["docs:generate"]) {
+        packageJson.scripts["docs:generate"] = "katax generate docs";
+      }
+
+      writeFileSync(
+        packageJsonPath,
+        JSON.stringify(packageJson, null, 2),
+        "utf-8",
+      );
+    }
+  } catch (err) {
+    // Silent fail - not critical
+  }
+}

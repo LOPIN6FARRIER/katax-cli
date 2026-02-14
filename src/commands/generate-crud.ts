@@ -1,70 +1,67 @@
-import chalk from 'chalk';
-import inquirer from 'inquirer';
-import ora from 'ora';
-import path from 'path';
-import {
-  success,
-  error,
-  warning,
-  gray,
-  title,
-  info
-} from '../utils/logger.js';
+import chalk from "chalk";
+import inquirer from "inquirer";
+import ora from "ora";
+import path from "path";
+import { success, error, warning, gray, title, info } from "../utils/logger.js";
 import {
   fileExists,
   writeFile,
   toPascalCase,
-  toCamelCase
-} from '../utils/file-utils.js';
-import { CRUDConfig, FieldConfig } from '../types/index.js';
+  toCamelCase,
+} from "../utils/file-utils.js";
+import { CRUDConfig, FieldConfig } from "../types/index.js";
+import { autoRegenerateDocs } from "./generate-docs.js";
 
 interface GenerateCrudOptions {
   auth?: boolean;
 }
 
-export async function generateCrudCommand(resourceName: string, options: GenerateCrudOptions = {}) {
+export async function generateCrudCommand(
+  resourceName: string,
+  options: GenerateCrudOptions = {},
+) {
   title(`🔧 Generate CRUD: ${resourceName}`);
 
   // Check if we're in a project
-  if (!fileExists(path.join(process.cwd(), 'package.json'))) {
-    error('Not in a project directory!');
-    gray('Run this command from your project root\n');
+  if (!fileExists(path.join(process.cwd(), "package.json"))) {
+    error("Not in a project directory!");
+    gray("Run this command from your project root\n");
     process.exit(1);
   }
 
   // Interactive prompts
   const answers = await inquirer.prompt([
     {
-      type: 'input',
-      name: 'tableName',
-      message: 'Database table name:',
-      default: `${resourceName.toLowerCase()}s`
+      type: "input",
+      name: "tableName",
+      message: "Database table name:",
+      default: `${resourceName.toLowerCase()}s`,
     },
     {
-      type: 'confirm',
-      name: 'addAuth',
-      message: 'Require authentication for endpoints?',
-      default: options.auth !== false
-    }
+      type: "confirm",
+      name: "addAuth",
+      message: "Require authentication for endpoints?",
+      default: options.auth !== false,
+    },
   ]);
 
-  info('\nDefine fields for the resource:');
+  info("\nDefine fields for the resource:");
   const fields: FieldConfig[] = [];
   let addingFields = true;
 
   while (addingFields) {
     const fieldAnswers = await inquirer.prompt([
       {
-        type: 'input',
-        name: 'fieldName',
-        message: 'Field name (press Enter to finish):',
+        type: "input",
+        name: "fieldName",
+        message: "Field name (press Enter to finish):",
         validate: (input) => {
           if (input && !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(input)) {
-            return 'Field name must be a valid identifier';
+            return "Field name must be a valid identifier";
           }
           return true;
-        }
-      }
+        },
+      },
     ]);
 
     if (!fieldAnswers.fieldName) {
@@ -74,31 +71,31 @@ export async function generateCrudCommand(resourceName: string, options: Generat
 
     const fieldConfig = await inquirer.prompt([
       {
-        type: 'list',
-        name: 'type',
+        type: "list",
+        name: "type",
         message: `Type for "${fieldAnswers.fieldName}":`,
-        choices: ['string', 'number', 'boolean', 'date', 'email']
+        choices: ["string", "number", "boolean", "date", "email"],
       },
       {
-        type: 'confirm',
-        name: 'required',
-        message: 'Required?',
-        default: true
-      }
+        type: "confirm",
+        name: "required",
+        message: "Required?",
+        default: true,
+      },
     ]);
 
     fields.push({
       name: fieldAnswers.fieldName,
       type: fieldConfig.type,
       required: fieldConfig.required,
-      rules: []
+      rules: [],
     });
 
     gray(`  ✓ Added field: ${fieldAnswers.fieldName} (${fieldConfig.type})`);
   }
 
   if (fields.length === 0) {
-    error('At least one field is required to generate CRUD');
+    error("At least one field is required to generate CRUD");
     process.exit(1);
   }
 
@@ -106,18 +103,18 @@ export async function generateCrudCommand(resourceName: string, options: Generat
     resourceName,
     tableName: answers.tableName,
     fields,
-    addAuth: answers.addAuth
+    addAuth: answers.addAuth,
   };
 
-  const spinner = ora('Generating CRUD endpoints...').start();
+  const spinner = ora("Generating CRUD endpoints...").start();
 
   try {
     await generateCRUDFiles(config);
-    spinner.succeed('CRUD endpoints generated');
+    spinner.succeed("CRUD endpoints generated");
 
     success(`\n✨ CRUD for "${resourceName}" created successfully!\n`);
 
-    info('Generated endpoints:');
+    info("Generated endpoints:");
     gray(`  GET    /api/${resourceName.toLowerCase()}     - List all`);
     gray(`  GET    /api/${resourceName.toLowerCase()}/:id - Get one`);
     gray(`  POST   /api/${resourceName.toLowerCase()}     - Create`);
@@ -125,41 +122,57 @@ export async function generateCrudCommand(resourceName: string, options: Generat
     gray(`  DELETE /api/${resourceName.toLowerCase()}/:id - Delete\n`);
 
     if (config.addAuth) {
-      warning('Remember to implement authentication middleware!');
+      warning("Remember to implement authentication middleware!");
     }
 
+    // Auto-regenerate API documentation
+    await autoRegenerateDocs(process.cwd());
   } catch (err) {
-    spinner.fail('Failed to generate CRUD');
-    error(err instanceof Error ? err.message : 'Unknown error');
+    spinner.fail("Failed to generate CRUD");
+    error(err instanceof Error ? err.message : "Unknown error");
     process.exit(1);
   }
 }
 
 async function generateCRUDFiles(config: CRUDConfig): Promise<void> {
   const { resourceName, fields } = config;
-  const basePath = path.join(process.cwd(), 'src', 'api', resourceName.toLowerCase());
+  const basePath = path.join(
+    process.cwd(),
+    "src",
+    "api",
+    resourceName.toLowerCase(),
+  );
 
   // Generate validator with all operations
   const validatorContent = generateCRUDValidator(config);
-  await writeFile(path.join(basePath, `${resourceName.toLowerCase()}.validator.ts`), validatorContent);
+  await writeFile(
+    path.join(basePath, `${resourceName.toLowerCase()}.validator.ts`),
+    validatorContent,
+  );
 
   // Generate controller with CRUD operations
   const controllerContent = generateCRUDController(config);
-  await writeFile(path.join(basePath, `${resourceName.toLowerCase()}.controller.ts`), controllerContent);
+  await writeFile(
+    path.join(basePath, `${resourceName.toLowerCase()}.controller.ts`),
+    controllerContent,
+  );
 
   // Generate routes with all CRUD endpoints
   const routesContent = generateCRUDRoutes(config);
-  await writeFile(path.join(basePath, `${resourceName.toLowerCase()}.routes.ts`), routesContent);
+  await writeFile(
+    path.join(basePath, `${resourceName.toLowerCase()}.routes.ts`),
+    routesContent,
+  );
 
   // Update main router
-  const { updateMainRouter } = await import('../generators/router-updater.js');
+  const { updateMainRouter } = await import("../generators/router-updater.js");
   await updateMainRouter(resourceName, {
     name: resourceName,
-    method: 'GET',
+    method: "GET",
     path: `/api/${resourceName.toLowerCase()}`,
     addValidation: true,
     fields,
-    addAsyncValidators: false
+    addAsyncValidators: false,
   });
 }
 
@@ -169,16 +182,17 @@ function generateCRUDValidator(config: CRUDConfig): string {
   const camelName = toCamelCase(resourceName);
 
   let content = `import { k, kataxInfer } from 'katax-core';\n\n`;
-  
+
   content += `// ==================== SCHEMAS ====================\n\n`;
 
   // Create schema
   content += `export const create${pascalName}Schema = k.object({\n`;
   fields.forEach((field, index) => {
     const isLast = index === fields.length - 1;
-    let fieldSchema = field.type === 'email' ? 'k.string().email()' : `k.${field.type}()`;
-    if (!field.required) fieldSchema += '.optional()';
-    content += `  ${field.name}: ${fieldSchema}${isLast ? '' : ','}\n`;
+    let fieldSchema =
+      field.type === "email" ? "k.string().email()" : `k.${field.type}()`;
+    if (!field.required) fieldSchema += ".optional()";
+    content += `  ${field.name}: ${fieldSchema}${isLast ? "" : ","}\n`;
   });
   content += `});\n\n`;
 
@@ -186,8 +200,11 @@ function generateCRUDValidator(config: CRUDConfig): string {
   content += `export const update${pascalName}Schema = k.object({\n`;
   fields.forEach((field, index) => {
     const isLast = index === fields.length - 1;
-    const fieldSchema = field.type === 'email' ? 'k.string().email().optional()' : `k.${field.type}().optional()`;
-    content += `  ${field.name}: ${fieldSchema}${isLast ? '' : ','}\n`;
+    const fieldSchema =
+      field.type === "email"
+        ? "k.string().email().optional()"
+        : `k.${field.type}().optional()`;
+    content += `  ${field.name}: ${fieldSchema}${isLast ? "" : ","}\n`;
   });
   content += `});\n\n`;
 
@@ -283,11 +300,11 @@ import {
 } from './${resourceName.toLowerCase()}.controller.js';
 import { create${pascalName}Schema, update${pascalName}Schema } from './${resourceName.toLowerCase()}.validator.js';
 import { sendResponse } from '../../shared/api.utils.js';
-${addAuth ? "// import { requireAuth } from '../auth/auth.middleware.js';\n" : ''}
+${addAuth ? "// import { requireAuth } from '../auth/auth.middleware.js';\n" : ""}
 const router = Router();
 
 // List all
-router.get('/', ${addAuth ? '/* requireAuth, */ ' : ''}async (req: Request, res: Response) => {
+router.get('/', ${addAuth ? "/* requireAuth, */ " : ""}async (req: Request, res: Response) => {
   try {
     const result = await list${pascalName}s();
     res.status(result.statusCode || 200).json(result);
@@ -297,7 +314,7 @@ router.get('/', ${addAuth ? '/* requireAuth, */ ' : ''}async (req: Request, res:
 });
 
 // Get one
-router.get('/:id', ${addAuth ? '/* requireAuth, */ ' : ''}async (req: Request, res: Response) => {
+router.get('/:id', ${addAuth ? "/* requireAuth, */ " : ""}async (req: Request, res: Response) => {
   try {
     const result = await get${pascalName}(req.params.id);
     res.status(result.statusCode || 200).json(result);
@@ -307,17 +324,17 @@ router.get('/:id', ${addAuth ? '/* requireAuth, */ ' : ''}async (req: Request, r
 });
 
 // Create
-router.post('/', ${addAuth ? '/* requireAuth, */ ' : ''}async (req: Request, res: Response) => {
+router.post('/', ${addAuth ? "/* requireAuth, */ " : ""}async (req: Request, res: Response) => {
   await sendResponse(req, res, () => create${pascalName}Schema.safeParse(req.body), (data) => create${pascalName}(data));
 });
 
 // Update
-router.put('/:id', ${addAuth ? '/* requireAuth, */ ' : ''}async (req: Request, res: Response) => {
+router.put('/:id', ${addAuth ? "/* requireAuth, */ " : ""}async (req: Request, res: Response) => {
   await sendResponse(req, res, () => update${pascalName}Schema.safeParse(req.body), (data) => update${pascalName}(req.params.id, data));
 });
 
 // Delete
-router.delete('/:id', ${addAuth ? '/* requireAuth, */ ' : ''}async (req: Request, res: Response) => {
+router.delete('/:id', ${addAuth ? "/* requireAuth, */ " : ""}async (req: Request, res: Response) => {
   try {
     const result = await delete${pascalName}(req.params.id);
     res.status(result.statusCode || 200).json(result);

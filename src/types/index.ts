@@ -1,13 +1,22 @@
 export interface ProjectConfig {
   name: string;
   description?: string;
-  type: 'rest-api' | 'graphql';
+  type: "rest-api" | "graphql";
   typescript: boolean;
-  database?: 'postgresql' | 'mysql' | 'mongodb' | 'none';
-  authentication?: 'jwt' | 'none';
-  validation: 'katax-core' | 'none';
-  orm?: 'none' | 'prisma' | 'typeorm';
+  database?: "postgresql" | "mysql" | "mongodb" | "none";
+  authentication?: "jwt" | "none";
+  validation: "katax-core" | "none";
+  swagger?: boolean;
+  orm?: "none" | "prisma" | "typeorm";
   port: number;
+  useKataxServiceManager?: boolean;
+  useRedis?: boolean;
+  redisConfig?: {
+    host?: string;
+    port?: string;
+    password?: string;
+    db?: string;
+  };
   dbConfig?: {
     host?: string;
     port?: string;
@@ -20,28 +29,36 @@ export interface ProjectConfig {
 
 export interface EndpointConfig {
   name: string;
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;
   addValidation: boolean;
   fields?: FieldConfig[];
   addAsyncValidators: boolean;
-  dbOperations?: ('create' | 'read' | 'update' | 'delete')[];
+  dbOperations?: ("create" | "read" | "update" | "delete")[];
 }
 
 export interface FieldConfig {
   name: string;
-  type: 'string' | 'number' | 'boolean' | 'date' | 'email' | 'array' | 'object';
+  type: "string" | "number" | "boolean" | "date" | "email" | "array" | "object";
   required: boolean;
   rules?: ValidationRule[];
   asyncValidator?: {
-    type: 'unique' | 'exists' | 'custom';
+    type: "unique" | "exists" | "custom";
     table?: string;
     column?: string;
   };
 }
 
 export interface ValidationRule {
-  type: 'minLength' | 'maxLength' | 'min' | 'max' | 'email' | 'regex' | 'oneOf' | 'custom';
+  type:
+    | "minLength"
+    | "maxLength"
+    | "min"
+    | "max"
+    | "email"
+    | "regex"
+    | "oneOf"
+    | "custom";
   value?: any;
   message?: string;
 }

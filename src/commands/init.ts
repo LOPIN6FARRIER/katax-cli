@@ -12,6 +12,7 @@ import {
   copyTemplate,
 } from "../utils/file-utils.js";
 import { ProjectConfig } from "../types/index.js";
+import { generateSwaggerSetup } from "../templates/generators/swagger-template.js";
 
 interface InitOptions {
   force?: boolean;
@@ -87,6 +88,25 @@ export async function initCommand(
       name: "validation",
       message: "Use katax-core for validation?",
       default: true,
+    },
+    {
+      type: "confirm",
+      name: "swagger",
+      message: "Install Swagger/OpenAPI documentation?",
+      default: true,
+    },
+    {
+      type: "confirm",
+      name: "useKataxServiceManager",
+      message: "Use katax-service-manager for services? (logger, database, etc.)",
+      default: true,
+    },
+    {
+      type: "confirm",
+      name: "useRedis",
+      message: "Add Redis cache support?",
+      default: false,
+      when: (answers) => answers.useKataxServiceManager,
     },
     {
       type: "input",
@@ -193,6 +213,37 @@ export async function initCommand(
     }
   }
 
+  // Ask for Redis configuration if Redis is selected
+  let redisConfig: any = {};
+  if (answers.useRedis) {
+    redisConfig = await inquirer.prompt([
+      {
+        type: "input",
+        name: "host",
+        message: "Redis host:",
+        default: "localhost",
+      },
+      {
+        type: "input",
+        name: "port",
+        message: "Redis port:",
+        default: "6379",
+      },
+      {
+        type: "password",
+        name: "password",
+        message: "Redis password (leave empty for no password):",
+        default: "",
+      },
+      {
+        type: "input",
+        name: "db",
+        message: "Redis database number:",
+        default: "0",
+      },
+    ]);
+  }
+
   const config: ProjectConfig = {
     name: finalProjectName,
     description: answers.description,
@@ -201,8 +252,12 @@ export async function initCommand(
     database: answers.database,
     authentication: answers.authentication,
     validation: answers.validation ? "katax-core" : "none",
+    swagger: answers.swagger,
     orm: "none",
     port: parseInt(answers.port),
+    useKataxServiceManager: answers.useKataxServiceManager,
+    useRedis: answers.useRedis || false,
+    redisConfig,
     dbConfig,
   };
 
@@ -226,6 +281,11 @@ export async function initCommand(
   gray(`  Database: ${config.database}`);
   gray(`  Auth: ${config.authentication}`);
   gray(`  Validation: ${config.validation}`);
+  gray(`  Swagger: ${config.swagger ? "Yes" : "No"}`);
+  gray(`  Service Manager: ${config.useKataxServiceManager ? "katax-service-manager" : "manual"}`);
+  if (config.useKataxServiceManager) {
+    gray(`  Redis Cache: ${config.useRedis ? "Yes" : "No"}`);
+  }
   gray(`  Port: ${config.port}\n`);
 
   const spinner = ora("Creating project structure...").start();
@@ -250,6 +310,14 @@ export async function initCommand(
     gray(`  katax add endpoint <name>    - Add a new endpoint`);
     gray(`  katax generate crud <name>   - Generate CRUD resource`);
     gray(`  katax info                   - Show project structure\n`);
+
+    if (config.swagger) {
+      info("📖 API Documentation:");
+      gray(
+        `  Open http://localhost:${config.port}/docs after starting the server`,
+      );
+      gray(`  Swagger UI is pre-configured and ready to use!\n`);
+    }
   } catch (err) {
     spinner.fail("Failed to create project");
     error(err instanceof Error ? err.message : "Unknown error");
@@ -453,16 +521,19 @@ async function createProjectStructure(
       express: "^4.18.2",
       cors: "^2.8.5",
       dotenv: "^16.3.1",
-      pino: "^8.17.2",
-      "pino-pretty": "^10.3.1",
+      ...(config.useKataxServiceManager
+        ? { "katax-service-manager": "^0.1.0" }
+        : { pino: "^8.17.2", "pino-pretty": "^10.3.1" }),
       ...(config.validation === "katax-core" && { "katax-core": "^1.5.0" }),
       ...(config.authentication === "jwt" && {
         jsonwebtoken: "^9.0.2",
         bcrypt: "^5.1.1",
       }),
+      ...(config.swagger && { "swagger-ui-express": "^5.0.0" }),
       ...(config.database === "postgresql" && { pg: "^8.11.3" }),
       ...(config.database === "mysql" && { mysql2: "^3.6.5" }),
       ...(config.database === "mongodb" && { mongodb: "^6.3.0" }),
+      ...(config.useRedis && { ioredis: "^5.3.2" }),
     },
     devDependencies: {
       "@types/express": "^4.17.21",
@@ -472,6 +543,7 @@ async function createProjectStructure(
         "@types/jsonwebtoken": "^9.0.5",
         "@types/bcrypt": "^5.0.2",
       }),
+      ...(config.swagger && { "@types/swagger-ui-express": "^4.1.6" }),
       ...(config.database === "postgresql" && { "@types/pg": "^8.10.9" }),
       typescript: "^5.3.3",
       tsx: "^4.7.0",
@@ -580,6 +652,18 @@ JWT_REFRESH_EXPIRES_IN=7d`;
     }
   }
 
+  // Generate Redis config if needed
+  let redisEnvVars = "";
+  if (config.useRedis && config.redisConfig) {
+    const { host, port, password, db } = config.redisConfig;
+    redisEnvVars = `
+# Redis Configuration
+REDIS_HOST=${host || 'localhost'}
+REDIS_PORT=${port || '6379'}
+REDIS_PASSWORD=${password || ''}
+REDIS_DB=${db || '0'}`;
+  }
+
   const envContent = `# Server Configuration
 PORT=${config.port}
 NODE_ENV=development
@@ -587,13 +671,12 @@ LOG_LEVEL=info
 
 # CORS Configuration
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
-
+${config.database !== "none" ? `
 # Database Configuration
-  ${databaseUrl}
-  ${dbEnvVars ? "\n# DB connection variables for pool\n" + dbEnvVars : ""}
-
-# JWT Configuration
-${jwtConfig}
+${databaseUrl}
+${dbEnvVars ? "\n# DB connection variables for pool\n" + dbEnvVars : ""}` : ""}
+${redisEnvVars}
+${config.authentication === "jwt" ? `\n# JWT Configuration\n${jwtConfig}` : ""}
 `;
 
   await writeFile(path.join(projectPath, ".env.example"), envContent);
@@ -638,7 +721,69 @@ coverage/
   );
 
   // Create index.ts
-  const indexContent = `import app from './app.js';
+  let indexContent: string;
+  
+  if (config.useKataxServiceManager) {
+    // Version with katax-service-manager
+    const dbInitCode = config.database !== "none" ? `
+  // Initialize database
+  await katax.database({
+    name: 'main',
+    type: '${config.database}',
+    connection: {
+      host: katax.envRequired('DB_HOST'),
+      port: parseInt(katax.env('DB_PORT', '${config.database === 'postgresql' ? '5432' : config.database === 'mysql' ? '3306' : '27017'}')),
+      database: katax.envRequired('DB_NAME'),
+      user: katax.envRequired('DB_USER'),
+      password: katax.envRequired('DB_PASSWORD'),
+    }
+  });
+` : '';
+
+    const cacheInitCode = config.useRedis ? `
+  // Initialize Redis cache
+  await katax.cache({
+    name: 'main',
+    host: katax.env('REDIS_HOST', 'localhost'),
+    port: parseInt(katax.env('REDIS_PORT', '6379')),
+    password: katax.env('REDIS_PASSWORD'),
+    db: parseInt(katax.env('REDIS_DB', '0')),
+  });
+` : '';
+
+    indexContent = `import { katax } from 'katax-service-manager';
+import app from './app.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+// Initialize katax and start server
+katax.init({
+  logger: {
+    level: katax.env('LOG_LEVEL', 'info') as 'info' | 'debug' | 'warn' | 'error',
+    prettyPrint: katax.isDev,
+  }
+}).then(async () => {
+${dbInitCode}${cacheInitCode}
+  const PORT = katax.env('PORT', '${config.port}');
+
+  app.listen(PORT, () => {
+    katax.logger.info({ message: \`Server running on http://localhost:\${PORT}\` });
+    katax.logger.info({ message: \`API endpoints available at http://localhost:\${PORT}/api\` });
+    katax.logger.info({ message: \`Health check: http://localhost:\${PORT}/api/health\` });
+  });
+
+  // Graceful shutdown
+  process.on('SIGTERM', async () => {
+    katax.logger.info({ message: 'SIGTERM received, shutting down...' });
+    await katax.shutdown();
+    process.exit(0);
+  });
+});
+`;
+  } else {
+    // Manual version (original)
+    indexContent = `import app from './app.js';
 import dotenv from 'dotenv';
 import { logger } from './shared/logger.utils.js';
 import { validateEnvironment } from './config/env.validator.js';
@@ -656,6 +801,7 @@ app.listen(PORT, () => {
   logger.info(\`Health check: http://localhost:\${PORT}/api/health\`);
 });
 `;
+  }
 
   await writeFile(path.join(projectPath, "src/index.ts"), indexContent);
 
@@ -665,7 +811,7 @@ import cors from 'cors';
 import router from './api/routes.js';
 import { errorMiddleware } from './middleware/error.middleware.js';
 import { requestLogger } from './middleware/logger.middleware.js';
-import { corsOptions } from './config/cors.config.js';
+import { corsOptions } from './config/cors.config.js';${config.swagger ? "\nimport { setupSwagger } from './config/swagger.config.js';" : ""}
 
 const app = express();
 
@@ -675,13 +821,13 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(requestLogger);
 
-// Routes
+${config.swagger ? "// API Documentation\nsetupSwagger(app);\n\n" : ""}// Routes
 app.get('/', (req, res) => {
   res.json({
     message: 'Welcome to ${config.name} API',
     version: '1.0.0',
     endpoints: '/api',
-    health: '/api/health'
+    health: '/api/health'${config.swagger ? ",\n    docs: '/docs'" : ""}
   });
 });
 
@@ -753,8 +899,8 @@ export function errorMiddleware(
     errorMiddlewareContent,
   );
 
-  // Create database connection if database is selected
-  if (config.database !== "none") {
+  // Create database connection if database is selected (only for manual mode)
+  if (config.database !== "none" && !config.useKataxServiceManager) {
     await createDatabaseConnection(projectPath, config);
   }
 
@@ -1027,8 +1173,67 @@ export function requireRole(...roles: string[]) {
     );
   }
 
-  // Create logger utility with pino
-  const loggerUtilsContent = `import pino from 'pino';
+  // Create logger utility
+  let loggerUtilsContent: string;
+
+  if (config.useKataxServiceManager) {
+    // Version using katax-service-manager
+    loggerUtilsContent = `import { katax } from 'katax-service-manager';
+
+/**
+ * Re-export katax logger for convenience
+ * Uses katax-service-manager's built-in pino logger
+ */
+export const logger = katax.logger;
+
+/**
+ * Log HTTP request
+ */
+export function logRequest(method: string, url: string, statusCode: number, duration: number): void {
+  katax.logger.info({
+    message: \`\${method} \${url} - \${statusCode} (\${duration}ms)\`,
+    method,
+    url,
+    statusCode,
+    duration: \`\${duration}ms\`
+  });
+}
+
+/**
+ * Log error with context
+ */
+export function logError(error: Error, context?: Record<string, any>): void {
+  katax.logger.error({
+    message: error.message,
+    err: error,
+    ...context
+  });
+}
+
+/**
+ * Log info message
+ */
+export function logInfo(message: string, data?: Record<string, any>): void {
+  katax.logger.info({ message, ...data });
+}
+
+/**
+ * Log warning message
+ */
+export function logWarning(message: string, data?: Record<string, any>): void {
+  katax.logger.warn({ message, ...data });
+}
+
+/**
+ * Log debug message
+ */
+export function logDebug(message: string, data?: Record<string, any>): void {
+  katax.logger.debug({ message, ...data });
+}
+`;
+  } else {
+    // Manual pino version
+    loggerUtilsContent = `import pino from 'pino';
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
@@ -1099,6 +1304,7 @@ export function logDebug(message: string, data?: Record<string, any>): void {
   logger.debug(data, message);
 }
 `;
+  }
 
   await writeFile(
     path.join(projectPath, "src/shared/logger.utils.ts"),
@@ -1199,6 +1405,88 @@ ${config.database !== "none" ? `  // Database variables\n  required.DATABASE_URL
     path.join(projectPath, "src/config/env.validator.ts"),
     envValidatorContent,
   );
+
+  // Create Swagger configuration if enabled
+  if (config.swagger) {
+    await writeFile(
+      path.join(projectPath, "src/config/swagger.config.ts"),
+      generateSwaggerSetup(),
+    );
+
+    // Create initial OpenAPI spec
+    const initialOpenAPISpec = {
+      openapi: "3.0.0",
+      info: {
+        title: config.name,
+        version: "1.0.0",
+        description: config.description || "API Documentation",
+      },
+      servers: [
+        {
+          url: `http://localhost:${config.port}`,
+          description: "Development server",
+        },
+      ],
+      paths: {
+        "/": {
+          get: {
+            tags: ["General"],
+            summary: "Welcome endpoint",
+            responses: {
+              "200": {
+                description: "Welcome message",
+                content: {
+                  "application/json": {
+                    schema: {
+                      type: "object",
+                      properties: {
+                        message: { type: "string" },
+                        version: { type: "string" },
+                        endpoints: { type: "string" },
+                        health: { type: "string" },
+                        docs: { type: "string" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        "/api/health": {
+          get: {
+            tags: ["Health"],
+            summary: "Health check endpoint",
+            responses: {
+              "200": {
+                description: "Health status",
+                content: {
+                  "application/json": {
+                    schema: {
+                      type: "object",
+                      properties: {
+                        status: { type: "string" },
+                        timestamp: { type: "string" },
+                        uptime: { type: "number" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      components: {
+        schemas: {},
+      },
+    };
+
+    await writeFile(
+      path.join(projectPath, "src/openapi.json"),
+      JSON.stringify(initialOpenAPISpec, null, 2),
+    );
+  }
 
   // Create health check handler
   const healthHandlerContent = `import { Request, Response } from 'express';
@@ -1316,15 +1604,15 @@ src/
 
 - **Express** - Web framework
 - **TypeScript** - Type safety
-${config.validation === "katax-core" ? "- **katax-core** - Schema validation\n" : ""}${config.authentication === "jwt" ? "- **JWT** - Authentication\n" : ""}${config.database !== "none" ? `- **${config.database}** - Database\n` : ""}
+${config.validation === "katax-core" ? "- **katax-core** - Schema validation\n" : ""}${config.authentication === "jwt" ? "- **JWT** - Authentication\n" : ""}${config.swagger ? "- **Swagger** - API Documentation\n" : ""}${config.database !== "none" ? `- **${config.database}** - Database\n` : ""}
 ## 📚 API Documentation
 
 Server runs on \`http://localhost:${config.port}\`
-
+${config.swagger ? `\n### Interactive Documentation\n\nSwagger UI is available at: **http://localhost:${config.port}/docs**\n\n- View all endpoints\n- Test API calls directly\n- See request/response schemas\n- Auto-updated when you add endpoints\n\n` : ""}
 ### Endpoints
 
 - \`GET /\` - Welcome message
-- \`GET /api/health\` - Health check
+- \`GET /api/health\` - Health check${config.swagger ? "\n- `GET /docs` - Swagger UI\n- `GET /openapi.json` - OpenAPI Specification" : ""}
 
 ## 🔧 Development
 

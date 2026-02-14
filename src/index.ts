@@ -7,152 +7,189 @@
  * integrated with katax-core for robust schema validation.
  */
 
-import { Command } from 'commander';
-import chalk from 'chalk';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { initCommand } from './commands/init.js';
-import { addEndpointCommand } from './commands/add-endpoint.js';
-import { generateCrudCommand } from './commands/generate-crud.js';
-import { infoCommand } from './commands/info.js';
-import { 
-  deployInitCommand, 
-  deployUpdateCommand, 
+import { Command } from "commander";
+import chalk from "chalk";
+import { readFileSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import { initCommand } from "./commands/init.js";
+import { addEndpointCommand } from "./commands/add-endpoint.js";
+import { generateCrudCommand } from "./commands/generate-crud.js";
+import { generateDocsCommand } from "./commands/generate-docs.js";
+import { infoCommand } from "./commands/info.js";
+import {
+  deployInitCommand,
+  deployUpdateCommand,
   deployRollbackCommand,
   deployLogsCommand,
-  deployStatusCommand 
-} from './commands/deploy.js';
-import { setVerbose, setColorMode } from './utils/logger.js';
+  deployStatusCommand,
+} from "./commands/deploy.js";
+import { setVerbose, setColorMode } from "./utils/logger.js";
 
 // Get version from package.json
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const packageJson = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf-8'));
+const packageJson = JSON.parse(
+  readFileSync(join(__dirname, "../package.json"), "utf-8"),
+);
 const version = packageJson.version;
 
 const program = new Command();
 
 program
-  .name('katax')
-  .description(chalk.blue('🚀 Generate Express APIs with TypeScript and katax-core validation'))
-  .version(version, '-v, --version', 'Output the current version');
+  .name("katax")
+  .description(
+    chalk.blue(
+      "🚀 Generate Express APIs with TypeScript and katax-core validation",
+    ),
+  )
+  .version(version, "-v, --version", "Output the current version");
 
 // Init command - Initialize new API project
 program
-  .command('init [project-name]')
-  .description('Initialize a new Express API project with TypeScript')
-  .option('-f, --force', 'Overwrite existing project')
+  .command("init [project-name]")
+  .description("Initialize a new Express API project with TypeScript")
+  .option("-f, --force", "Overwrite existing project")
   .action(initCommand);
 
 // Add command - Add resources to project
 const addCommand = program
-  .command('add')
-  .description('Add resources to your project');
+  .command("add")
+  .description("Add resources to your project");
 
 addCommand
-  .command('endpoint <name>')
-  .description('Add a new endpoint with validation')
-  .option('-m, --method <method>', 'HTTP method (GET, POST, PUT, DELETE)', 'POST')
-  .option('-p, --path <path>', 'Route path')
+  .command("endpoint <name>")
+  .description("Add a new endpoint with validation")
+  .option(
+    "-m, --method <method>",
+    "HTTP method (GET, POST, PUT, DELETE)",
+    "POST",
+  )
+  .option("-p, --path <path>", "Route path")
   .action(addEndpointCommand);
 
 // Generate command - Generate complete resources
 const generateCommand = program
-  .command('generate')
-  .aliases(['gen', 'g'])
-  .description('Generate complete resources');
+  .command("generate")
+  .aliases(["gen", "g"])
+  .description("Generate complete resources");
 
 generateCommand
-  .command('crud <resource-name>')
-  .description('Generate a complete CRUD resource')
-  .option('--no-auth', 'Skip authentication middleware')
+  .command("crud <resource-name>")
+  .description("Generate a complete CRUD resource")
+  .option("--no-auth", "Skip authentication middleware")
   .action(generateCrudCommand);
+
+generateCommand
+  .command("docs")
+  .description("Generate API documentation (Swagger/OpenAPI)")
+  .option("-f, --force", "Force regenerate (overwrite existing)")
+  .option("-o, --output <path>", "Output path for OpenAPI spec")
+  .action(generateDocsCommand);
 
 // Deploy command - PM2 deployment on Ubuntu VPS
 const deployCommand = program
-  .command('deploy')
-  .description('Deploy and manage applications with PM2 on Ubuntu VPS');
+  .command("deploy")
+  .description("Deploy and manage applications with PM2 on Ubuntu VPS");
 
 deployCommand
-  .command('init')
-  .description('Initial deployment - Clone repo and setup PM2')
+  .command("init")
+  .description("Initial deployment - Clone repo and setup PM2")
   .action(deployInitCommand);
 
 deployCommand
-  .command('update')
-  .description('Update existing deployment - Pull changes and restart')
-  .option('-b, --branch <branch>', 'Branch to deploy (default: current branch)')
-  .option('--hard', 'Hard reset - discard all local changes')
+  .command("update")
+  .description("Update existing deployment - Pull changes and restart")
+  .option("-b, --branch <branch>", "Branch to deploy (default: current branch)")
+  .option("--hard", "Hard reset - discard all local changes")
+  .option(
+    "-a, --app-name <name>",
+    "PM2 application name (overrides .katax-deploy.json)",
+  )
   .action(deployUpdateCommand);
 
 deployCommand
-  .command('rollback')
-  .description('Rollback to previous version')
-  .option('-c, --commits <number>', 'Number of commits to rollback', '1')
+  .command("rollback")
+  .description("Rollback to previous version")
+  .option("-c, --commits <number>", "Number of commits to rollback", "1")
+  .option(
+    "-a, --app-name <name>",
+    "PM2 application name (overrides .katax-deploy.json)",
+  )
   .action(deployRollbackCommand);
 
 deployCommand
-  .command('logs')
-  .description('View PM2 application logs')
-  .option('-l, --lines <number>', 'Number of lines to display')
-  .option('-f, --follow', 'Follow log output')
+  .command("logs")
+  .description("View PM2 application logs")
+  .option("-l, --lines <number>", "Number of lines to display")
+  .option("-f, --follow", "Follow log output")
+  .option(
+    "-a, --app-name <name>",
+    "PM2 application name (overrides .katax-deploy.json)",
+  )
   .action(deployLogsCommand);
 
 deployCommand
-  .command('status')
-  .description('Show PM2 applications status')
+  .command("status")
+  .description("Show PM2 applications status")
   .action(deployStatusCommand);
 
 // Info command - Show project structure
 program
-  .command('info')
-  .aliases(['status', 'ls'])
-  .description('Show current project structure and routes')
+  .command("info")
+  .aliases(["status", "ls"])
+  .description("Show current project structure and routes")
   .action(infoCommand);
 
 // Global options
 program
-  .option('--no-color', 'Disable colored output')
-  .option('--verbose', 'Enable verbose logging');
+  .option("--no-color", "Disable colored output")
+  .option("--verbose", "Enable verbose logging");
 
 // Parse global options
-program.hook('preAction', (thisCommand) => {
+program.hook("preAction", (thisCommand) => {
   const opts = thisCommand.optsWithGlobals();
   if (opts.verbose) setVerbose(true);
   if (opts.color === false) setColorMode(false);
 });
 
 // Show help after error and suggestions
-program.showHelpAfterError('(add --help for additional information)');
+program.showHelpAfterError("(add --help for additional information)");
 program.showSuggestionAfterError(true);
 
 // Add examples to help
-program.addHelpText('after', `
-${chalk.bold('Examples:')}
-  ${chalk.gray('# Initialize a new API project')}
+program.addHelpText(
+  "after",
+  `
+${chalk.bold("Examples:")}
+  ${chalk.gray("# Initialize a new API project")}
   $ katax init my-api
 
-  ${chalk.gray('# Add a single endpoint')}
+  ${chalk.gray("# Add a single endpoint")}
   $ katax add endpoint users
 
-  ${chalk.gray('# Generate a complete CRUD resource')}
+  ${chalk.gray("# Generate a complete CRUD resource")}
   $ katax generate crud products
 
-  ${chalk.gray('# View project structure')}
+  ${chalk.gray("# Generate API documentation")}
+  $ katax generate docs
+
+  ${chalk.gray("# View project structure")}
   $ katax info
 
-  ${chalk.gray('# Deploy to Ubuntu VPS with PM2')}
-  $ katax deploy init              # First time deployment
-  $ katax deploy update            # Update existing deployment
-  $ katax deploy update --hard     # Hard reset and update
-  $ katax deploy status            # Check PM2 status
-  $ katax deploy logs -f           # Follow logs
-  $ katax deploy rollback          # Rollback 1 commit
+  ${chalk.gray("# Deploy to Ubuntu VPS with PM2")}
+  $ katax deploy init                    # First time deployment
+  $ katax deploy update                  # Update existing deployment
+  $ katax deploy update --hard           # Hard reset and update
+  $ katax deploy update -a my-api-prod   # Specify PM2 app name
+  $ katax deploy status                  # Check PM2 status
+  $ katax deploy logs -f                 # Follow logs
+  $ katax deploy rollback                # Rollback 1 commit
 
-${chalk.bold('Documentation:')}
-  ${chalk.cyan('https://github.com/LOPIN6FARRIER/katax-cli#readme')}
-`);
+${chalk.bold("Documentation:")}
+  ${chalk.cyan("https://github.com/LOPIN6FARRIER/katax-cli#readme")}
+`,
+);
 
 // Parse command line arguments
 program.parse(process.argv);
