@@ -976,7 +976,7 @@ import { logger } from '../../shared/logger.utils.js';
 export class HelloController {
   async greet(query: HelloQueryData): Promise<Result<{ message: string }, AppError>> {
     const name = query.name || 'World';
-    logger.info('Greeting', { name });
+    logger.info({ message: 'Greeting', name });
     
     return ok({ message: \`Hello, \${name}! Welcome to ${this.config.name} API.\` });
   }
