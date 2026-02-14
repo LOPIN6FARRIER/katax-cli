@@ -364,10 +364,14 @@ async function initGitRepository(projectPath: string): Promise<void> {
   });
 
   // Create initial commit
-  await execa("git", ["commit", "-m", "Initial commit - Project created with Katax CLI"], {
-    cwd: projectPath,
-    stdio: "ignore",
-  });
+  await execa(
+    "git",
+    ["commit", "-m", "Initial commit - Project created with Katax CLI"],
+    {
+      cwd: projectPath,
+      stdio: "ignore",
+    },
+  );
 }
 
 async function createDatabaseConnection(
@@ -933,8 +937,9 @@ export function errorMiddleware(
       url: req.url,
       headers: req.headers
     },
-    statusCode
-  }, message);
+    statusCode,
+    message
+    });
 
   res.status(statusCode).json({
     success: false,
@@ -1005,8 +1010,9 @@ export async function sendResponse<TValidation = any, TResponse = any>(
       logger.warn({
         method: req.method,
         path: req.path,
-        errors: validationResult.errors
-      }, 'Validation failed');
+        errors: validationResult.errors, 
+        message:'Validation failed'}
+      );
       
       res.status(400).json({
         success: false,
@@ -1043,8 +1049,9 @@ export async function sendResponse<TValidation = any, TResponse = any>(
     logger.error({
       err: error,
       method: req.method,
-      path: req.path
-    }, 'Internal server error');
+      path: req.path, 
+      message: 'Internal server error'
+    });
     
     res.status(500).json({
       success: false,
@@ -1447,12 +1454,11 @@ ${config.database !== "none" ? `  // Database variables\n  required.DATABASE_URL
   }
 
   if (missing.length > 0) {
-    logger.error(\`Missing required environment variables: \${missing.join(', ')}\`);
+    logger.error({message:\`Missing required environment variables: \${missing.join(', ')}\`});
     logger.error('Please check your .env file');
-    process.exit(1);
   }
 
-  logger.info('Environment variables validated successfully');
+  logger.info({message:'Environment variables validated successfully'});
 }
 `;
 
