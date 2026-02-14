@@ -29,6 +29,11 @@ interface OpenAPISpec {
   };
 }
 
+export interface OpenAPIGeneratorOptions {
+  port?: string;
+  productionUrl?: string;
+}
+
 /**
  * Service to generate OpenAPI 3.0 specification from project structure
  */
@@ -36,9 +41,11 @@ export class OpenAPIGenerator {
   private projectPath: string;
   private endpoints: OpenAPIEndpoint[] = [];
   private schemas: Record<string, any> = {};
+  private options: OpenAPIGeneratorOptions;
 
-  constructor(projectPath: string) {
+  constructor(projectPath: string, options: OpenAPIGeneratorOptions = {}) {
     this.projectPath = projectPath;
+    this.options = options;
   }
 
   /**
@@ -317,6 +324,23 @@ export class OpenAPIGenerator {
       };
     }
 
+    const port = this.options.port || "3000";
+    const productionUrl = this.options.productionUrl;
+
+    const servers: Array<{ url: string; description: string }> = [
+      {
+        url: `http://localhost:${port}`,
+        description: "Development server",
+      },
+    ];
+
+    if (productionUrl) {
+      servers.push({
+        url: productionUrl,
+        description: "Production server",
+      });
+    }
+
     return {
       openapi: "3.0.0",
       info: {
@@ -324,16 +348,7 @@ export class OpenAPIGenerator {
         version: "1.0.0",
         description: "Auto-generated API documentation by Katax CLI",
       },
-      servers: [
-        {
-          url: "http://localhost:3000",
-          description: "Development server",
-        },
-        {
-          url: "https://api.example.com",
-          description: "Production server",
-        },
-      ],
+      servers,
       paths,
       components: {
         schemas: this.schemas,

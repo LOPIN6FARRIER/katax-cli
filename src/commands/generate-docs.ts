@@ -14,6 +14,7 @@ interface GenerateDocsOptions {
   force?: boolean;
   output?: string;
   port?: string;
+  url?: string;
 }
 
 /**
@@ -87,8 +88,31 @@ export async function generateDocsCommand(
   const spinner = ora("Scanning project structure...").start();
 
   try {
+    // Read port and production URL from options or .env
+    const envPath = path.join(projectPath, ".env");
+    let port = options.port;
+    let productionUrl = options.url;
+
+    if (existsSync(envPath)) {
+      const envContent = readFileSync(envPath, "utf-8");
+      if (!port) {
+        const portMatch = envContent.match(/^PORT\s*=\s*(\d+)/m);
+        if (portMatch) port = portMatch[1];
+      }
+      if (!productionUrl) {
+        const urlMatch = envContent.match(/^(?:API_URL|PRODUCTION_URL)\s*=\s*(.+)/m);
+        if (urlMatch) productionUrl = urlMatch[1].trim();
+      }
+    }
+
+    // Set defaults
+    port = port || "3000";
+
     // Generate OpenAPI spec
-    const generator = new OpenAPIGenerator(projectPath);
+    const generator = new OpenAPIGenerator(projectPath, {
+      port,
+      productionUrl,
+    });
     const spec = await generator.generate();
 
     spinner.text = "Generating OpenAPI specification...";
@@ -137,23 +161,15 @@ export async function generateDocsCommand(
     );
 
     // Get port: from option, then .env, then default 3000
-    let port = options.port;
-    if (!port) {
-      const envPath = path.join(projectPath, ".env");
-      if (existsSync(envPath)) {
-        const envContent = readFileSync(envPath, "utf-8");
-        const portMatch = envContent.match(/^PORT\s*=\s*(\d+)/m);
-        if (portMatch) {
-          port = portMatch[1];
-        }
-      }
-    }
-    port = port || "3000";
+    // Note: port variable already set above when creating OpenAPIGenerator
 
     info(`\n📖 View documentation:`);
     info(
       `   ${chalk.cyan("npm run dev")} then open ${chalk.green(`http://localhost:${port}/docs`)}`,
     );
+    if (productionUrl) {
+      info(`   ${chalk.cyan("Production:")} ${chalk.green(`${productionUrl}/docs`)}`);
+    }
     info(
       `\n📄 OpenAPI spec: ${chalk.gray(path.relative(projectPath, outputPath))}\n`,
     );

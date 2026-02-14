@@ -38,12 +38,17 @@ export async function fixDocsCommand(options: FixOptions = {}): Promise<void> {
 
     // Check and fix build script
     const currentBuild = packageJson.scripts?.build || "";
-    if (!currentBuild.includes("copyfiles") && !currentBuild.includes("openapi.json")) {
+    if (
+      !currentBuild.includes("copyfiles") &&
+      !currentBuild.includes("openapi.json")
+    ) {
       if (currentBuild === "tsc") {
-        packageJson.scripts.build = "tsc && copyfiles -u 1 src/openapi.json dist";
+        packageJson.scripts.build =
+          "tsc && copyfiles -u 1 src/openapi.json dist";
         changes.push("Updated build script to copy openapi.json");
       } else if (currentBuild.startsWith("tsc")) {
-        packageJson.scripts.build = currentBuild + " && copyfiles -u 1 src/openapi.json dist";
+        packageJson.scripts.build =
+          currentBuild + " && copyfiles -u 1 src/openapi.json dist";
         changes.push("Appended openapi.json copy to build script");
       } else {
         warning(`Custom build script detected: "${currentBuild}"`);
@@ -70,7 +75,7 @@ export async function fixDocsCommand(options: FixOptions = {}): Promise<void> {
 
     // Show changes
     info("\n📝 Changes applied:");
-    changes.forEach(change => info(`   ${chalk.green("✓")} ${change}`));
+    changes.forEach((change) => info(`   ${chalk.green("✓")} ${change}`));
 
     // Install dependencies
     if (!options.skipInstall) {
@@ -87,9 +92,10 @@ export async function fixDocsCommand(options: FixOptions = {}): Promise<void> {
     }
 
     success("\n✅ Docs fix applied successfully!\n");
-    info("Now when you run 'npm run build', openapi.json will be copied to dist/");
+    info(
+      "Now when you run 'npm run build', openapi.json will be copied to dist/",
+    );
     info("Your /docs endpoint will work in production.\n");
-
   } catch (err: any) {
     spinner.fail("Failed to apply fix");
     error(err.message);
@@ -102,9 +108,9 @@ export async function fixDocsCommand(options: FixOptions = {}): Promise<void> {
  */
 export async function fixAllCommand(options: FixOptions = {}): Promise<void> {
   title("🔧 Apply All Fixes");
-  
+
   await fixDocsCommand(options);
-  
+
   // Future fixes can be added here
   // await fixOtherThing(options);
 }
@@ -114,10 +120,14 @@ export async function fixAllCommand(options: FixOptions = {}): Promise<void> {
  */
 export function listFixesCommand(): void {
   title("🔧 Available Fixes");
-  
+
   console.log();
-  info(`${chalk.cyan("katax fix docs")}     - Fix API documentation for production`);
-  info(`                      Adds copyfiles to copy openapi.json during build`);
+  info(
+    `${chalk.cyan("katax fix docs")}     - Fix API documentation for production`,
+  );
+  info(
+    `                      Adds copyfiles to copy openapi.json during build`,
+  );
   console.log();
   info(`${chalk.cyan("katax fix all")}      - Apply all available fixes`);
   console.log();

@@ -91,6 +91,7 @@ generateCommand
   .option("-f, --force", "Force regenerate (overwrite existing)")
   .option("-o, --output <path>", "Output path for OpenAPI spec")
   .option("-p, --port <port>", "Server port for documentation URL")
+  .option("-u, --url <url>", "Production server URL (e.g., https://api.example.com)")
   .action(generateDocsCommand);
 
 // Deploy command - PM2 deployment on Ubuntu VPS
