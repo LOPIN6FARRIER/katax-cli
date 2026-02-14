@@ -98,7 +98,8 @@ export async function initCommand(
     {
       type: "confirm",
       name: "useKataxServiceManager",
-      message: "Use katax-service-manager for services? (logger, database, etc.)",
+      message:
+        "Use katax-service-manager for services? (logger, database, etc.)",
       default: true,
     },
     {
@@ -282,7 +283,9 @@ export async function initCommand(
   gray(`  Auth: ${config.authentication}`);
   gray(`  Validation: ${config.validation}`);
   gray(`  Swagger: ${config.swagger ? "Yes" : "No"}`);
-  gray(`  Service Manager: ${config.useKataxServiceManager ? "katax-service-manager" : "manual"}`);
+  gray(
+    `  Service Manager: ${config.useKataxServiceManager ? "katax-service-manager" : "manual"}`,
+  );
   if (config.useKataxServiceManager) {
     gray(`  Redis Cache: ${config.useRedis ? "Yes" : "No"}`);
   }
@@ -522,7 +525,7 @@ async function createProjectStructure(
       cors: "^2.8.5",
       dotenv: "^16.3.1",
       ...(config.useKataxServiceManager
-        ? { "katax-service-manager": "^0.1.0" }
+        ? { "katax-service-manager": "^0.1.0", "pino-pretty": "^10.3.1" }
         : { pino: "^8.17.2", "pino-pretty": "^10.3.1" }),
       ...(config.validation === "katax-core" && { "katax-core": "^1.5.0" }),
       ...(config.authentication === "jwt" && {
@@ -658,10 +661,10 @@ JWT_REFRESH_EXPIRES_IN=7d`;
     const { host, port, password, db } = config.redisConfig;
     redisEnvVars = `
 # Redis Configuration
-REDIS_HOST=${host || 'localhost'}
-REDIS_PORT=${port || '6379'}
-REDIS_PASSWORD=${password || ''}
-REDIS_DB=${db || '0'}`;
+REDIS_HOST=${host || "localhost"}
+REDIS_PORT=${port || "6379"}
+REDIS_PASSWORD=${password || ""}
+REDIS_DB=${db || "0"}`;
   }
 
   const envContent = `# Server Configuration
@@ -671,10 +674,14 @@ LOG_LEVEL=info
 
 # CORS Configuration
 ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
-${config.database !== "none" ? `
+${
+  config.database !== "none"
+    ? `
 # Database Configuration
 ${databaseUrl}
-${dbEnvVars ? "\n# DB connection variables for pool\n" + dbEnvVars : ""}` : ""}
+${dbEnvVars ? "\n# DB connection variables for pool\n" + dbEnvVars : ""}`
+    : ""
+}
 ${redisEnvVars}
 ${config.authentication === "jwt" ? `\n# JWT Configuration\n${jwtConfig}` : ""}
 `;
@@ -722,34 +729,42 @@ coverage/
 
   // Create index.ts
   let indexContent: string;
-  
+
   if (config.useKataxServiceManager) {
     // Version with katax-service-manager
-    const dbInitCode = config.database !== "none" ? `
+    const dbInitCode =
+      config.database !== "none"
+        ? `
   // Initialize database
   await katax.database({
     name: 'main',
     type: '${config.database}',
     connection: {
       host: katax.envRequired('DB_HOST'),
-      port: parseInt(katax.env('DB_PORT', '${config.database === 'postgresql' ? '5432' : config.database === 'mysql' ? '3306' : '27017'}')),
+      port: parseInt(katax.env('DB_PORT', '${config.database === "postgresql" ? "5432" : config.database === "mysql" ? "3306" : "27017"}')),
       database: katax.envRequired('DB_NAME'),
       user: katax.envRequired('DB_USER'),
       password: katax.envRequired('DB_PASSWORD'),
     }
   });
-` : '';
+`
+        : "";
 
-    const cacheInitCode = config.useRedis ? `
-  // Initialize Redis cache
-  await katax.cache({
-    name: 'main',
-    host: katax.env('REDIS_HOST', 'localhost'),
-    port: parseInt(katax.env('REDIS_PORT', '6379')),
-    password: katax.env('REDIS_PASSWORD'),
-    db: parseInt(katax.env('REDIS_DB', '0')),
+    const cacheInitCode = config.useRedis
+      ? `
+  // Initialize Redis cache connection
+  await katax.database({
+    name: 'redis',
+    type: 'redis',
+    connection: {
+      host: katax.env('REDIS_HOST', 'localhost'),
+      port: parseInt(katax.env('REDIS_PORT', '6379')),
+      password: katax.env('REDIS_PASSWORD'),
+      db: parseInt(katax.env('REDIS_DB', '0')),
+    }
   });
-` : '';
+`
+      : "";
 
     indexContent = `import { katax } from 'katax-service-manager';
 import app from './app.js';
@@ -1178,13 +1193,18 @@ export function requireRole(...roles: string[]) {
 
   if (config.useKataxServiceManager) {
     // Version using katax-service-manager
+    // Use Proxy to avoid accessing katax.logger before init()
     loggerUtilsContent = `import { katax } from 'katax-service-manager';
 
 /**
- * Re-export katax logger for convenience
- * Uses katax-service-manager's built-in pino logger
+ * Lazy logger proxy - forwards calls to katax.logger after init()
+ * This allows importing { logger } without causing errors before init()
  */
-export const logger = katax.logger;
+export const logger = new Proxy({} as typeof katax.logger, {
+  get(_, prop: string) {
+    return (katax.logger as any)[prop];
+  }
+});
 
 /**
  * Log HTTP request
