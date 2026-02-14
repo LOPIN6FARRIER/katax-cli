@@ -122,6 +122,12 @@ export async function initCommand(
         return true;
       },
     },
+    {
+      type: "confirm",
+      name: "initGit",
+      message: "Initialize git repository?",
+      default: true,
+    },
   ]);
 
   // Ask for database credentials if database is selected
@@ -258,6 +264,7 @@ export async function initCommand(
     port: parseInt(answers.port),
     useKataxServiceManager: answers.useKataxServiceManager,
     useRedis: answers.useRedis || false,
+    initGit: answers.initGit,
     redisConfig,
     dbConfig,
   };
@@ -289,6 +296,7 @@ export async function initCommand(
   if (config.useKataxServiceManager) {
     gray(`  Redis Cache: ${config.useRedis ? "Yes" : "No"}`);
   }
+  gray(`  Git: ${config.initGit ? "Yes" : "No"}`);
   gray(`  Port: ${config.port}\n`);
 
   const spinner = ora("Creating project structure...").start();
@@ -302,6 +310,13 @@ export async function initCommand(
     spinner.start("Installing dependencies...");
     await installDependencies(projectPath);
     spinner.succeed("Dependencies installed");
+
+    // Initialize git repository if requested
+    if (config.initGit) {
+      spinner.start("Initializing git repository...");
+      await initGitRepository(projectPath);
+      spinner.succeed("Git repository initialized");
+    }
 
     success(`\n✨ Project "${finalProjectName}" created successfully!\n`);
 
@@ -330,6 +345,26 @@ export async function initCommand(
 
 async function installDependencies(projectPath: string): Promise<void> {
   await execa("npm", ["install"], {
+    cwd: projectPath,
+    stdio: "ignore",
+  });
+}
+
+async function initGitRepository(projectPath: string): Promise<void> {
+  // Initialize git repository
+  await execa("git", ["init"], {
+    cwd: projectPath,
+    stdio: "ignore",
+  });
+
+  // Add all files
+  await execa("git", ["add", "."], {
+    cwd: projectPath,
+    stdio: "ignore",
+  });
+
+  // Create initial commit
+  await execa("git", ["commit", "-m", "Initial commit - Project created with Katax CLI"], {
     cwd: projectPath,
     stdio: "ignore",
   });

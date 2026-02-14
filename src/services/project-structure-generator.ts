@@ -51,9 +51,6 @@ export class ProjectStructureGenerator {
       await this.generateJwtUtils();
     }
 
-    // Generate DI container
-    await this.generateDIContainer();
-
     // Generate database connection
     if (this.config.database !== "none") {
       await this.generateDatabaseConnection();
@@ -936,22 +933,6 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
       path.join(this.projectPath, "src/database/connection.ts"),
       builder.build(),
     );
-  }
-
-  /**
-   * Generate DI container
-   */
-  private async generateDIContainer(): Promise<void> {
-    const { generateDIContainer } =
-      await import("../templates/generators/di-container.js");
-
-    const content = generateDIContainer({
-      hasDatabase: !!this.config.database && this.config.database !== "none",
-      database:
-        this.config.database !== "none" ? this.config.database : undefined,
-    });
-
-    await writeFile(path.join(this.projectPath, "src/container.ts"), content);
   }
 
   /**
