@@ -24,6 +24,11 @@ import {
   deployLogsCommand,
   deployStatusCommand,
 } from "./commands/deploy.js";
+import {
+  fixDocsCommand,
+  fixAllCommand,
+  listFixesCommand,
+} from "./commands/fix.js";
 import { setVerbose, setColorMode } from "./utils/logger.js";
 
 // Get version from package.json
@@ -134,6 +139,28 @@ deployCommand
   .command("status")
   .description("Show PM2 applications status")
   .action(deployStatusCommand);
+
+// Fix command - Patch existing projects
+const fixCommand = program
+  .command("fix")
+  .description("Apply fixes to existing projects");
+
+fixCommand
+  .command("docs")
+  .description("Fix API documentation for production (copy openapi.json)")
+  .option("--skip-install", "Skip npm install after patching")
+  .action(fixDocsCommand);
+
+fixCommand
+  .command("all")
+  .description("Apply all available fixes")
+  .option("--skip-install", "Skip npm install after patching")
+  .action(fixAllCommand);
+
+fixCommand
+  .command("list")
+  .description("List all available fixes")
+  .action(listFixesCommand);
 
 // Info command - Show project structure
 program
