@@ -110,6 +110,34 @@ export async function initCommand(
       when: (answers) => answers.useKataxServiceManager,
     },
     {
+      type: "confirm",
+      name: "useWebSocket",
+      message: "Add WebSocket support (Socket.IO)?",
+      default: false,
+      when: (answers) => answers.useKataxServiceManager,
+    },
+    {
+      type: "confirm",
+      name: "useSeparateSocketPort",
+      message: "Use separate port for WebSocket? (No = share Express port)",
+      default: false,
+      when: (answers) => answers.useWebSocket,
+    },
+    {
+      type: "input",
+      name: "socketPort",
+      message: "WebSocket port:",
+      default: "3001",
+      when: (answers) => answers.useWebSocket && answers.useSeparateSocketPort,
+      validate: (input) => {
+        const port = parseInt(input);
+        if (isNaN(port) || port < 1 || port > 65535) {
+          return "Port must be a number between 1 and 65535";
+        }
+        return true;
+      },
+    },
+    {
       type: "input",
       name: "port",
       message: "Server port:",
@@ -264,6 +292,9 @@ export async function initCommand(
     port: parseInt(answers.port),
     useKataxServiceManager: answers.useKataxServiceManager,
     useRedis: answers.useRedis || false,
+    useWebSocket: answers.useWebSocket || false,
+    useSeparateSocketPort: answers.useSeparateSocketPort || false,
+    socketPort: answers.socketPort ? parseInt(answers.socketPort) : 3001,
     initGit: answers.initGit,
     redisConfig,
     dbConfig,
@@ -295,6 +326,7 @@ export async function initCommand(
   );
   if (config.useKataxServiceManager) {
     gray(`  Redis Cache: ${config.useRedis ? "Yes" : "No"}`);
+    gray(`  WebSocket: ${config.useWebSocket ? (config.useSeparateSocketPort ? `Yes (port ${config.socketPort})` : "Yes (shared port)") : "No"}`);
   }
   gray(`  Git: ${config.initGit ? "Yes" : "No"}`);
   gray(`  Port: ${config.port}\n`);
@@ -564,9 +596,9 @@ async function createProjectStructure(
       cors: "^2.8.5",
       dotenv: "^16.3.1",
       ...(config.useKataxServiceManager
-        ? { "katax-service-manager": "^0.1.0", "pino-pretty": "^10.3.1" }
+        ? { "katax-service-manager": "latest", "pino-pretty": "^10.3.1" }
         : { pino: "^8.17.2", "pino-pretty": "^10.3.1" }),
-      ...(config.validation === "katax-core" && { "katax-core": "^1.5.0" }),
+      ...(config.validation === "katax-core" && { "katax-core": "latest" }),
       ...(config.authentication === "jwt" && {
         jsonwebtoken: "^9.0.2",
         bcrypt: "^5.1.1",
@@ -805,8 +837,64 @@ coverage/
 `
       : "";
 
+    // WebSocket initialization code
+    let socketInitCode = "";
+    let httpImport = "";
+    let serverSetup = "";
+    let listenCode = "";
+
+    if (config.useWebSocket) {
+      if (config.useSeparateSocketPort) {
+        // Separate port mode
+        socketInitCode = `
+  // Initialize WebSocket (separate port)
+  await katax.socket({
+    name: 'main',
+    port: ${config.socketPort},
+    cors: { origin: '*' }
+  });
+`;
+        listenCode = `  const PORT = katax.env('PORT', '${config.port}');
+
+  app.listen(PORT, () => {
+    katax.logger.info({ message: \`Server running on http://localhost:\${PORT}\` });
+    katax.logger.info({ message: \`WebSocket running on port ${config.socketPort}\` });
+    katax.logger.info({ message: \`API endpoints available at http://localhost:\${PORT}/api\` });
+    katax.logger.info({ message: \`Health check: http://localhost:\${PORT}/api/health\` });
+  });`;
+      } else {
+        // Shared port mode
+        httpImport = "\nimport { createServer } from 'http';";
+        serverSetup = `
+  const PORT = katax.env('PORT', '${config.port}');
+  const httpServer = createServer(app);
+
+  // Initialize WebSocket (same port as Express)
+  await katax.socket({
+    name: 'main',
+    httpServer,
+    cors: { origin: '*' }
+  });
+`;
+        listenCode = `  httpServer.listen(PORT, () => {
+    katax.logger.info({ message: \`Server + WebSocket running on http://localhost:\${PORT}\` });
+    katax.logger.info({ message: \`API endpoints available at http://localhost:\${PORT}/api\` });
+    katax.logger.info({ message: \`Health check: http://localhost:\${PORT}/api/health\` });
+  });`;
+      }
+    } else {
+      // No WebSocket
+      listenCode = `  const PORT = katax.env('PORT', '${config.port}');
+
+  app.listen(PORT, () => {
+    katax.logger.info({ message: \`Server running on http://localhost:\${PORT}\` });
+    katax.logger.info({ message: \`API endpoints available at http://localhost:\${PORT}/api\` });
+    katax.logger.info({ message: \`Health check: http://localhost:\${PORT}/api/health\` });
+  });`;
+    }
+
     indexContent = `import { katax } from 'katax-service-manager';
-import app from './app.js';
+import app from './app.js';${httpImport}
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -818,14 +906,8 @@ katax.init({
     prettyPrint: katax.isDev,
   }
 }).then(async () => {
-${dbInitCode}${cacheInitCode}
-  const PORT = katax.env('PORT', '${config.port}');
-
-  app.listen(PORT, () => {
-    katax.logger.info({ message: \`Server running on http://localhost:\${PORT}\` });
-    katax.logger.info({ message: \`API endpoints available at http://localhost:\${PORT}/api\` });
-    katax.logger.info({ message: \`Health check: http://localhost:\${PORT}/api/health\` });
-  });
+${dbInitCode}${cacheInitCode}${serverSetup}${socketInitCode}
+${listenCode}
 
   // Graceful shutdown
   process.on('SIGTERM', async () => {

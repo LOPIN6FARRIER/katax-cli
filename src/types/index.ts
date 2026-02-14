@@ -11,6 +11,9 @@ export interface ProjectConfig {
   port: number;
   useKataxServiceManager?: boolean;
   useRedis?: boolean;
+  useWebSocket?: boolean;
+  useSeparateSocketPort?: boolean;
+  socketPort?: number;
   initGit?: boolean;
   redisConfig?: {
     host?: string;
