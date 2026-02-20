@@ -17,6 +17,48 @@ interface GenerateDocsOptions {
   url?: string;
 }
 
+function extractPort(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim().replace(/^['\"]|['\"]$/g, "");
+  const match = trimmed.match(/\b(\d{2,5})\b/);
+  if (!match) return undefined;
+  const port = Number(match[1]);
+  if (Number.isNaN(port) || port < 1 || port > 65535) return undefined;
+  return String(port);
+}
+
+function resolveProjectPort(projectPath: string, preferredPort?: string): string {
+  const fromOption = extractPort(preferredPort);
+  if (fromOption) return fromOption;
+
+  const envPath = path.join(projectPath, ".env");
+  if (existsSync(envPath)) {
+    const envContent = readFileSync(envPath, "utf-8");
+    const portMatch = envContent.match(/^PORT\s*=\s*(.+)$/m);
+    const fromEnv = extractPort(portMatch?.[1]);
+    if (fromEnv) return fromEnv;
+  }
+
+  const indexPath = path.join(projectPath, "src", "index.ts");
+  if (existsSync(indexPath)) {
+    const indexContent = readFileSync(indexPath, "utf-8");
+
+    const patterns = [
+      /katax\.env\(\s*['\"]PORT['\"]\s*,\s*['\"](\d{2,5})['\"]\s*\)/,
+      /process\.env\.PORT\s*\|\|\s*['\"]?(\d{2,5})['\"]?/,
+      /process\.env\.PORT\s*\?\?\s*['\"]?(\d{2,5})['\"]?/,
+    ];
+
+    for (const pattern of patterns) {
+      const match = indexContent.match(pattern);
+      const parsed = extractPort(match?.[1]);
+      if (parsed) return parsed;
+    }
+  }
+
+  return "3000";
+}
+
 /**
  * Auto-regenerate documentation silently (for use after CRUD/endpoint generation)
  */
@@ -88,25 +130,18 @@ export async function generateDocsCommand(
   const spinner = ora("Scanning project structure...").start();
 
   try {
-    // Read port and production URL from options or .env
+    // Read production URL from options or .env
     const envPath = path.join(projectPath, ".env");
-    let port = options.port;
+    let port = resolveProjectPort(projectPath, options.port);
     let productionUrl = options.url;
 
     if (existsSync(envPath)) {
       const envContent = readFileSync(envPath, "utf-8");
-      if (!port) {
-        const portMatch = envContent.match(/^PORT\s*=\s*(\d+)/m);
-        if (portMatch) port = portMatch[1];
-      }
       if (!productionUrl) {
         const urlMatch = envContent.match(/^(?:API_URL|PRODUCTION_URL)\s*=\s*(.+)/m);
         if (urlMatch) productionUrl = urlMatch[1].trim();
       }
     }
-
-    // Set defaults
-    port = port || "3000";
 
     // Generate OpenAPI spec
     const generator = new OpenAPIGenerator(projectPath, {
@@ -134,7 +169,7 @@ export async function generateDocsCommand(
     spinner.succeed("OpenAPI specification generated");
 
     // Setup Swagger UI (if not already setup)
-    await setupSwaggerUI(projectPath, options.force);
+    await setupSwaggerUI(projectPath, options.force, port);
 
     // Summary
     success("\n✅ API Documentation generated successfully!\n");
@@ -189,6 +224,7 @@ export async function generateDocsCommand(
 async function setupSwaggerUI(
   projectPath: string,
   force: boolean = false,
+  port: string = "3000",
 ): Promise<void> {
   const configDir = path.join(projectPath, "src", "config");
   const swaggerConfigPath = path.join(configDir, "swagger.config.ts");
@@ -203,7 +239,7 @@ async function setupSwaggerUI(
 
   try {
     // Create swagger config
-    await writeFile(swaggerConfigPath, generateSwaggerSetup());
+    await writeFile(swaggerConfigPath, generateSwaggerSetup(port));
 
     // Update app.ts to include swagger
     const appPath = path.join(projectPath, "src", "app.ts");
@@ -254,7 +290,7 @@ async function setupSwaggerUI(
     // Create docs README
     const docsReadmePath = path.join(projectPath, "DOCS.md");
     if (!existsSync(docsReadmePath) || force) {
-      await writeFile(docsReadmePath, generateSwaggerReadme());
+      await writeFile(docsReadmePath, generateSwaggerReadme(port));
     }
 
     // Update package.json to include swagger-ui-express

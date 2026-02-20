@@ -103,6 +103,56 @@ export async function initCommand(
       default: true,
     },
     {
+      type: "list",
+      name: "kataxMode",
+      message: "Katax mode:",
+      choices: [
+        { name: "Singleton (shared katax instance)", value: "singleton" },
+        { name: "Instance (new Katax())", value: "instance" },
+      ],
+      default: "singleton",
+      when: (answers) => answers.useKataxServiceManager,
+    },
+    {
+      type: "confirm",
+      name: "useRegistry",
+      message: "Enable Katax registry integration?",
+      default: false,
+      when: (answers) => answers.useKataxServiceManager,
+    },
+    {
+      type: "list",
+      name: "registryMode",
+      message: "Registry integration mode:",
+      choices: [
+        { name: "HTTP URL registry", value: "url" },
+        { name: "Callback handler (custom integration)", value: "handler" },
+      ],
+      default: "url",
+      when: (answers) => answers.useKataxServiceManager && answers.useRegistry,
+    },
+    {
+      type: "input",
+      name: "registryUrl",
+      message: "Registry URL (e.g. https://dashboard.example.com/api/services):",
+      default: "http://localhost:4000/api/services",
+      when: (answers) =>
+        answers.useKataxServiceManager && answers.useRegistry && answers.registryMode === "url",
+      validate: (input) => {
+        if (!input?.trim()) {
+          return "Registry URL is required";
+        }
+        return true;
+      },
+    },
+    {
+      type: "confirm",
+      name: "useLifecycleHooks",
+      message: "Generate Katax lifecycle hooks scaffold?",
+      default: false,
+      when: (answers) => answers.useKataxServiceManager,
+    },
+    {
       type: "confirm",
       name: "useRedis",
       message: "Add Redis cache support?",
@@ -291,10 +341,15 @@ export async function initCommand(
     orm: "none",
     port: parseInt(answers.port),
     useKataxServiceManager: answers.useKataxServiceManager,
+    kataxMode: answers.kataxMode || "singleton",
     useRedis: answers.useRedis || false,
     useWebSocket: answers.useWebSocket || false,
     useSeparateSocketPort: answers.useSeparateSocketPort || false,
     socketPort: answers.socketPort ? parseInt(answers.socketPort) : 3001,
+    useRegistry: answers.useRegistry || false,
+    registryMode: answers.useRegistry ? (answers.registryMode || "url") : "none",
+    registryUrl: answers.registryUrl,
+    useLifecycleHooks: answers.useLifecycleHooks || false,
     initGit: answers.initGit,
     redisConfig,
     dbConfig,
@@ -325,6 +380,9 @@ export async function initCommand(
     `  Service Manager: ${config.useKataxServiceManager ? "katax-service-manager" : "manual"}`,
   );
   if (config.useKataxServiceManager) {
+    gray(`  Katax Mode: ${config.kataxMode === "instance" ? "Instance (new Katax())" : "Singleton"}`);
+    gray(`  Registry: ${config.useRegistry ? (config.registryMode === "url" ? `URL (${config.registryUrl})` : "Callback handler") : "No"}`);
+    gray(`  Lifecycle Hooks: ${config.useLifecycleHooks ? "Yes" : "No"}`);
     gray(`  Redis Cache: ${config.useRedis ? "Yes" : "No"}`);
     gray(
       `  WebSocket: ${config.useWebSocket ? (config.useSeparateSocketPort ? `Yes (port ${config.socketPort})` : "Yes (shared port)") : "No"}`,
@@ -598,7 +656,7 @@ async function createProjectStructure(
       cors: "^2.8.5",
       dotenv: "^16.3.1",
       ...(config.useKataxServiceManager
-        ? { "katax-service-manager": "latest", "pino-pretty": "^10.3.1" }
+        ? { "katax-service-manager": "^0.3.3", "pino-pretty": "^10.3.1" }
         : { pino: "^8.17.2", "pino-pretty": "^10.3.1" }),
       ...(config.validation === "katax-core" && { "katax-core": "latest" }),
       ...(config.authentication === "jwt" && {
@@ -740,6 +798,18 @@ REDIS_PASSWORD=${password || ""}
 REDIS_DB=${db || "0"}`;
   }
 
+  let registryEnvVars = "";
+  if (config.useKataxServiceManager && config.useRegistry && config.registryMode === "url") {
+    registryEnvVars = `
+# Katax Registry Configuration
+REGISTRY_URL=${config.registryUrl || "http://localhost:4000/api/services"}
+REGISTRY_API_KEY=
+REGISTRY_HEARTBEAT_MS=30000
+REGISTRY_TIMEOUT_MS=5000
+REGISTRY_RETRY_ATTEMPTS=2
+REGISTRY_RETRY_BASE_DELAY_MS=300`;
+  }
+
   const envContent = `# Server Configuration
 PORT=${config.port}
 NODE_ENV=development
@@ -756,6 +826,7 @@ ${dbEnvVars ? "\n# DB connection variables for pool\n" + dbEnvVars : ""}`
     : ""
 }
 ${redisEnvVars}
+${registryEnvVars}
 ${config.authentication === "jwt" ? `\n# JWT Configuration\n${jwtConfig}` : ""}
 `;
 
@@ -802,11 +873,23 @@ coverage/
 
   // Create index.ts
   let indexContent: string;
+  const kataxImportSourceRoot =
+    config.useKataxServiceManager && config.kataxMode === "instance"
+      ? "./config/katax.instance.js"
+      : "katax-service-manager";
+  const kataxImportSourceShared =
+    config.useKataxServiceManager && config.kataxMode === "instance"
+      ? "../config/katax.instance.js"
+      : "katax-service-manager";
+  const kataxImportSourceApi =
+    config.useKataxServiceManager && config.kataxMode === "instance"
+      ? "../../config/katax.instance.js"
+      : "katax-service-manager";
 
   if (config.useKataxServiceManager) {
     // Version with katax-service-manager
     const dbInitCode =
-      config.database !== "none"
+      config.database === "postgresql" || config.database === "mysql"
         ? `
   // Initialize database
   await katax.database({
@@ -818,6 +901,22 @@ coverage/
       database: katax.envRequired('DB_NAME'),
       user: katax.envRequired('DB_USER'),
       password: katax.envRequired('DB_PASSWORD'),
+    }
+  });
+`
+        : config.database === "mongodb"
+          ? `
+  // Initialize MongoDB
+  await katax.database({
+    name: 'main',
+    type: 'mongodb',
+    connection: {
+      host: katax.envRequired('DB_HOST'),
+      port: parseInt(katax.env('DB_PORT', '27017')),
+      database: katax.envRequired('DB_NAME'),
+      user: katax.env('DB_USER') || undefined,
+      password: katax.env('DB_PASSWORD') || undefined,
+      authSource: katax.env('DB_AUTH_SOURCE') || undefined,
     }
   });
 `
@@ -839,6 +938,55 @@ coverage/
 `
       : "";
 
+    const registryInitCode =
+      config.useRegistry && config.registryMode === "url"
+        ? `
+      registry: {
+        url: katax.envRequired('REGISTRY_URL'),
+        apiKey: katax.env('REGISTRY_API_KEY') || undefined,
+        heartbeatInterval: parseInt(katax.env('REGISTRY_HEARTBEAT_MS', '30000')),
+        requestTimeoutMs: parseInt(katax.env('REGISTRY_TIMEOUT_MS', '5000')),
+        retryAttempts: parseInt(katax.env('REGISTRY_RETRY_ATTEMPTS', '2')),
+        retryBaseDelayMs: parseInt(katax.env('REGISTRY_RETRY_BASE_DELAY_MS', '300')),
+      },`
+        : config.useRegistry && config.registryMode === "handler"
+          ? `
+      registry: {
+        handler: {
+          register: async (serviceInfo) => {
+            katax.logger.info({ message: 'Registry register callback', serviceInfo });
+          },
+          heartbeat: async (serviceInfo) => {
+            katax.logger.debug({ message: 'Registry heartbeat callback', serviceInfo });
+          },
+          unregister: async (payload) => {
+            katax.logger.info({ message: 'Registry unregister callback', payload });
+          },
+        },
+      },`
+          : "";
+
+    const hooksInitCode = config.useLifecycleHooks
+      ? `
+      hooks: {
+        beforeInit: async () => {
+          console.log('Katax beforeInit hook');
+        },
+        afterInit: async () => {
+          katax.logger.info({ message: 'Katax afterInit hook' });
+        },
+        beforeShutdown: async () => {
+          katax.logger.info({ message: 'Katax beforeShutdown hook' });
+        },
+        afterShutdown: async () => {
+          console.log('Katax afterShutdown hook');
+        },
+        onError: async (err) => {
+          console.error('Katax lifecycle error:', err);
+        },
+      },`
+      : "";
+
     // WebSocket initialization code
     let socketInitCode = "";
     let httpImport = "";
@@ -852,8 +1000,7 @@ coverage/
   // Initialize WebSocket (separate port)
   await katax.socket({
     name: 'main',
-    port: ${config.socketPort},
-    cors: { origin: '*' }
+    port: ${config.socketPort}
   });
 `;
         listenCode = `  const PORT = katax.env('PORT', '${config.port}');
@@ -874,8 +1021,7 @@ coverage/
   // Initialize WebSocket (same port as Express)
   await katax.socket({
     name: 'main',
-    httpServer,
-    cors: { origin: '*' }
+    httpServer
   });
 `;
         listenCode = `  httpServer.listen(PORT, () => {
@@ -895,29 +1041,46 @@ coverage/
   });`;
     }
 
-    indexContent = `import { katax } from 'katax-service-manager';
+    indexContent = `import { katax } from '${kataxImportSourceRoot}';
 import app from './app.js';${httpImport}
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 // Initialize katax and start server
-katax.init({
-  logger: {
-    level: katax.env('LOG_LEVEL', 'info') as 'info' | 'debug' | 'warn' | 'error',
-    prettyPrint: katax.isDev,
-  }
-}).then(async () => {
+async function bootstrap(): Promise<void> {
+  try {
+    await katax.init({
+      logger: {
+        level: katax.env('LOG_LEVEL', 'info') as 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal',
+        prettyPrint: katax.isDev,
+      },${registryInitCode}${hooksInitCode}
+    });
+
 ${dbInitCode}${cacheInitCode}${serverSetup}${socketInitCode}
 ${listenCode}
 
-  // Graceful shutdown
-  process.on('SIGTERM', async () => {
-    katax.logger.info({ message: 'SIGTERM received, shutting down...' });
-    await katax.shutdown();
-    process.exit(0);
-  });
-});
+    const shutdown = async (signal: string): Promise<void> => {
+      katax.logger.info({ message: signal + ' received, shutting down...' });
+      await katax.shutdown();
+      process.exit(0);
+    };
+
+    // Graceful shutdown
+    process.on('SIGTERM', () => {
+      void shutdown('SIGTERM');
+    });
+
+    process.on('SIGINT', () => {
+      void shutdown('SIGINT');
+    });
+  } catch (err) {
+    console.error('Failed to start application:', err);
+    process.exit(1);
+  }
+}
+
+void bootstrap();
 `;
   } else {
     // Manual version (original)
@@ -942,6 +1105,18 @@ app.listen(PORT, () => {
   }
 
   await writeFile(path.join(projectPath, "src/index.ts"), indexContent);
+
+  if (config.useKataxServiceManager && config.kataxMode === "instance") {
+    const kataxInstanceContent = `import { Katax } from 'katax-service-manager';
+
+export const katax = new Katax();
+`;
+
+    await writeFile(
+      path.join(projectPath, "src/config/katax.instance.ts"),
+      kataxInstanceContent,
+    );
+  }
 
   // Create app.ts
   const appContent = `import express from 'express';
@@ -1320,7 +1495,7 @@ export function requireRole(...roles: string[]) {
   if (config.useKataxServiceManager) {
     // Version using katax-service-manager
     // Use Proxy to avoid accessing katax.logger before init()
-    loggerUtilsContent = `import { katax } from 'katax-service-manager';
+    loggerUtilsContent = `import { katax } from '${kataxImportSourceShared}';
 
 /**
  * Lazy logger proxy - forwards calls to katax.logger after init()
@@ -1555,7 +1730,7 @@ ${config.database !== "none" ? `  // Database variables\n  required.DATABASE_URL
   if (config.swagger) {
     await writeFile(
       path.join(projectPath, "src/config/swagger.config.ts"),
-      generateSwaggerSetup(),
+      generateSwaggerSetup(String(config.port)),
     );
 
     // Create initial OpenAPI spec
@@ -1634,7 +1809,45 @@ ${config.database !== "none" ? `  // Database variables\n  required.DATABASE_URL
   }
 
   // Create health check handler
-  const healthHandlerContent = `import { Request, Response } from 'express';
+  const healthHandlerContent = config.useKataxServiceManager
+    ? `import { Request, Response } from 'express';
+import { katax } from '${kataxImportSourceApi}';
+
+/**
+ * Health check endpoint handler
+ * Returns Katax service status and app metadata
+ */
+export async function healthCheckHandler(req: Request, res: Response): Promise<void> {
+  try {
+    const health = await katax.healthCheck();
+
+    const statusCode =
+      health.status === 'healthy'
+        ? 200
+        : health.status === 'degraded'
+          ? 503
+          : 500;
+
+    res.status(statusCode).json({
+      ...health,
+      environment: katax.nodeEnv,
+      app: {
+        name: katax.appName,
+        version: katax.version,
+        registered: katax.isRegistered,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: 'unhealthy',
+      message: 'Failed to evaluate health status',
+      error: err instanceof Error ? err.message : 'Unknown error',
+      timestamp: Date.now(),
+    });
+  }
+}
+`
+    : `import { Request, Response } from 'express';
 import os from 'os';
 
 /**

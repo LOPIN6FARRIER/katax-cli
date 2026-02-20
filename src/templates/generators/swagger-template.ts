@@ -3,7 +3,7 @@
  * Generates swagger setup file for the API project
  */
 
-export function generateSwaggerSetup(): string {
+export function generateSwaggerSetup(defaultPort: string = "3000"): string {
   return `import swaggerUi from 'swagger-ui-express';
 import { Express } from 'express';
 import fs from 'fs';
@@ -45,7 +45,10 @@ export function setupSwagger(app: Express): void {
       res.send(swaggerDocument);
     });
 
-    console.log('📖 API Documentation available at: http://localhost:3000/docs');
+    const configuredServer = swaggerDocument?.servers?.[0]?.url as string | undefined;
+    const configuredPortMatch = configuredServer?.match(/localhost:(\\d+)/);
+    const port = process.env.PORT || configuredPortMatch?.[1] || '${defaultPort}';
+    console.log(\`📖 API Documentation available at: http://localhost:\${port}/docs\`);
   } catch (error) {
     console.error('Failed to setup Swagger:', error);
   }
@@ -53,15 +56,15 @@ export function setupSwagger(app: Express): void {
 `;
 }
 
-export function generateSwaggerReadme(): string {
+export function generateSwaggerReadme(defaultPort: string = "3000"): string {
   return `# API Documentation
 
 ## Swagger UI
 
 Interactive API documentation is available at:
 
-- **Development**: http://localhost:3000/docs
-- **OpenAPI Spec**: http://localhost:3000/openapi.json
+- **Development**: http://localhost:${defaultPort}/docs
+- **OpenAPI Spec**: http://localhost:${defaultPort}/openapi.json
 
 ## Features
 
@@ -80,7 +83,7 @@ Interactive API documentation is available at:
 npm run dev
 
 # Open browser
-open http://localhost:3000/docs
+open http://localhost:${defaultPort}/docs
 \`\`\`
 
 ### Regenerate Documentation
@@ -97,7 +100,7 @@ katax generate docs --force
 
 ### Export to Postman
 
-1. Open http://localhost:3000/openapi.json
+1. Open http://localhost:${defaultPort}/openapi.json
 2. Copy the JSON
 3. In Postman: File → Import → Raw Text → Paste
 4. ✅ All endpoints imported!

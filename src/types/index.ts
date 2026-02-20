@@ -10,10 +10,15 @@ export interface ProjectConfig {
   orm?: "none" | "prisma" | "typeorm";
   port: number;
   useKataxServiceManager?: boolean;
+  kataxMode?: "singleton" | "instance";
   useRedis?: boolean;
   useWebSocket?: boolean;
   useSeparateSocketPort?: boolean;
   socketPort?: number;
+  useRegistry?: boolean;
+  registryMode?: "none" | "url" | "handler";
+  registryUrl?: string;
+  useLifecycleHooks?: boolean;
   initGit?: boolean;
   redisConfig?: {
     host?: string;
