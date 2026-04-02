@@ -15,6 +15,7 @@ export function generateValidatorImproved(config: EndpointConfig): string {
   // Imports
   builder
     .import(['k', 'kataxInfer'], 'katax-core')
+    .import(['validateSchema', 'ValidationResult'], '../../shared/api.utils.js')
     .line();
 
   // Generate Create schema for POST
@@ -154,8 +155,8 @@ function generateValidatorFunctions(
   if (method === 'POST') {
     builder
       .comment(`Validate create ${camelName} data`)
-      .line(`export async function validate${pascalName}(data: unknown) {`)
-      .line(`  return await create${pascalName}Schema.safeParse(data);`)
+      .line(`export async function validate${pascalName}(data: unknown): Promise<ValidationResult<Create${pascalName}Data>> {`)
+      .line(`  return validateSchema<Create${pascalName}Data>(create${pascalName}Schema, data);`)
       .line('}')
       .line();
   }
@@ -163,8 +164,8 @@ function generateValidatorFunctions(
   if (method === 'PUT' || method === 'PATCH') {
     builder
       .comment(`Validate update ${camelName} data`)
-      .line(`export async function validate${pascalName}(data: unknown) {`)
-      .line(`  return await update${pascalName}Schema.safeParse(data);`)
+      .line(`export async function validate${pascalName}(data: unknown): Promise<ValidationResult<Update${pascalName}Data>> {`)
+      .line(`  return validateSchema<Update${pascalName}Data>(update${pascalName}Schema, data);`)
       .line('}')
       .line();
   }
@@ -172,8 +173,8 @@ function generateValidatorFunctions(
   if (method === 'GET') {
     builder
       .comment(`Validate ${camelName} query parameters`)
-      .line(`export async function validate${pascalName}Query(data: unknown) {`)
-      .line(`  return await ${camelName}QuerySchema.safeParse(data);`)
+      .line(`export async function validate${pascalName}Query(data: unknown): Promise<ValidationResult<${pascalName}QueryParams>> {`)
+      .line(`  return validateSchema<${pascalName}QueryParams>(${camelName}QuerySchema, data);`)
       .line('}')
       .line();
   }
@@ -181,8 +182,8 @@ function generateValidatorFunctions(
   // ID validator
   builder
     .comment(`Validate ${camelName} ID`)
-    .line(`export async function validate${pascalName}Id(id: unknown) {`)
-    .line(`  return await ${pascalName.toLowerCase()}IdSchema.safeParse(id);`)
+    .line(`export async function validate${pascalName}Id(id: unknown): Promise<ValidationResult<string>> {`)
+    .line(`  return validateSchema<string>(${pascalName.toLowerCase()}IdSchema, id);`)
     .line('}')
     .line();
 }

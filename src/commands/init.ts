@@ -1244,15 +1244,36 @@ export interface ControllerResult<T = any> {
   data?: T;
   error?: string;
   statusCode?: number;
+  currentPage?: number;
+  totalPages?: number;
+  totalItems?: number;
+  totalCount?: number;
+  hasMorePages?: boolean;
 }
 
 export function createSuccessResult<T>(
   message: string,
   data?: T,
   error?: string,
-  statusCode = 200
+  statusCode = 200,
+  currentPage?: number,
+  totalPages?: number,
+  totalItems?: number,
+  totalCount?: number,
+  hasMorePages?: boolean
 ): ControllerResult<T> {
-  return { success: true, message, data, error, statusCode };
+  return {
+    success: true,
+    message,
+    error,
+    statusCode,
+    currentPage,
+    totalPages,
+    totalItems,
+    totalCount,
+    hasMorePages,
+    data
+  };
 }
 
 export function createErrorResult(
@@ -1267,6 +1288,62 @@ export interface ValidationResult<T = any> {
   isValid: boolean;
   data?: T;
   errors?: any[];
+}
+
+/**
+ * Función genérica reutilizable para validar datos con schemas de katax-core
+ * Soporta validación síncrona y asíncrona automáticamente
+ * 
+ * @param schema - Schema de katax-core (cualquier tipo: k.object, k.string, etc.)
+ * @param data - Datos a validar
+ * @returns ValidationResult con datos validados o errores
+ */
+export async function validateSchema<T>(
+  schema: any,
+  data: unknown
+): Promise<ValidationResult<T>> {
+  // Detectar si el schema tiene validadores asíncronos
+  const hasAsyncValidators = schema._def?.async || false;
+
+  let result: any;
+
+  try {
+    if (hasAsyncValidators) {
+      // Usar safeParseAsync para schemas con validadores asíncronos
+      result = await schema.safeParseAsync(data);
+    } else {
+      // Usar safeParse para schemas síncronos
+      result = schema.safeParse(data);
+    }
+  } catch (error) {
+    // Error inesperado durante la validación
+    return {
+      isValid: false,
+      errors: [
+        {
+          field: 'unknown',
+          message: 'Error inesperado durante la validación'
+        }
+      ]
+    };
+  }
+
+  if (!result.success) {
+    const errors = result.issues?.map((issue: any) => ({
+      field: issue.path.join('.') || 'root',
+      message: issue.message
+    })) || [];
+
+    return {
+      isValid: false,
+      errors
+    };
+  }
+
+  return {
+    isValid: true,
+    data: result.data
+  };
 }
 
 export async function sendResponse<TValidation = any, TResponse = any>(
@@ -1308,12 +1385,28 @@ export async function sendResponse<TValidation = any, TResponse = any>(
       message: controllerResult.message
     };
 
-    if (controllerResult.data !== undefined) {
-      response.data = controllerResult.data;
-    }
-
     if (controllerResult.error) {
       response.error = controllerResult.error;
+    }
+
+    if (controllerResult.totalItems !== undefined) {
+      response.totalItems = controllerResult.totalItems;
+    }
+
+    if (controllerResult.currentPage !== undefined) {
+      response.currentPage = controllerResult.currentPage;
+    }
+
+    if (controllerResult.totalPages !== undefined) {
+      response.totalPages = controllerResult.totalPages;
+    }
+
+    if (controllerResult.hasMorePages !== undefined) {
+      response.hasMorePages = controllerResult.hasMorePages;
+    }
+
+    if (controllerResult.data !== undefined) {
+      response.data = controllerResult.data;
     }
 
     res.status(statusCode).json(response);

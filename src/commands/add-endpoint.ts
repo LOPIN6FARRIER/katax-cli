@@ -244,7 +244,7 @@ function generateValidator(
 ): string {
   const lines: string[] = [
     "import { k, kataxInfer } from 'katax-core';",
-    "import type { ValidationResult } from '../../shared/api.utils.js';",
+    "import { validateSchema, ValidationResult } from '../../shared/api.utils.js';",
     "",
     "// ==================== SCHEMAS ====================",
     "",
@@ -329,14 +329,7 @@ function generateValidator(
   if (methods.some((m) => ["GET", "PUT", "PATCH", "DELETE"].includes(m))) {
     lines.push(
       `export async function validate${pascalName}Id(data: unknown): Promise<ValidationResult<${pascalName}IdParams>> {`,
-      `  const result = ${camelName}IdSchema.safeParse(data);`,
-      "  if (!result.success) {",
-      "    return {",
-      "      isValid: false,",
-      "      errors: result.issues.map(i => ({ field: i.path.join('.'), message: i.message }))",
-      "    };",
-      "  }",
-      "  return { isValid: true, data: result.data };",
+      `  return validateSchema<${pascalName}IdParams>(${camelName}IdSchema, data);`,
       "}",
       "",
     );
@@ -345,14 +338,7 @@ function generateValidator(
   if (methods.includes("GET")) {
     lines.push(
       `export async function validate${pascalName}Query(data: unknown): Promise<ValidationResult<${pascalName}Query>> {`,
-      `  const result = ${camelName}QuerySchema.safeParse(data);`,
-      "  if (!result.success) {",
-      "    return {",
-      "      isValid: false,",
-      "      errors: result.issues.map(i => ({ field: i.path.join('.'), message: i.message }))",
-      "    };",
-      "  }",
-      "  return { isValid: true, data: result.data };",
+      `  return validateSchema<${pascalName}Query>(${camelName}QuerySchema, data);`,
       "}",
       "",
     );
@@ -361,14 +347,7 @@ function generateValidator(
   if (methods.includes("POST")) {
     lines.push(
       `export async function validate${pascalName}Create(data: unknown): Promise<ValidationResult<Create${pascalName}Data>> {`,
-      `  const result = create${pascalName}Schema.safeParse(data);`,
-      "  if (!result.success) {",
-      "    return {",
-      "      isValid: false,",
-      "      errors: result.issues.map(i => ({ field: i.path.join('.'), message: i.message }))",
-      "    };",
-      "  }",
-      "  return { isValid: true, data: result.data };",
+      `  return validateSchema<Create${pascalName}Data>(create${pascalName}Schema, data);`,
       "}",
       "",
     );
@@ -377,14 +356,7 @@ function generateValidator(
   if (methods.some((m) => ["PUT", "PATCH"].includes(m))) {
     lines.push(
       `export async function validate${pascalName}Update(data: unknown): Promise<ValidationResult<Update${pascalName}Data>> {`,
-      `  const result = update${pascalName}Schema.safeParse(data);`,
-      "  if (!result.success) {",
-      "    return {",
-      "      isValid: false,",
-      "      errors: result.issues.map(i => ({ field: i.path.join('.'), message: i.message }))",
-      "    };",
-      "  }",
-      "  return { isValid: true, data: result.data };",
+      `  return validateSchema<Update${pascalName}Data>(update${pascalName}Schema, data);`,
       "}",
       "",
     );

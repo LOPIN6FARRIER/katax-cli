@@ -1,5 +1,18 @@
 # Changelog - Katax CLI
 
+## [1.4.2] - 2026-04-02
+
+### ✨ Added
+- **Pagination Support**: `ControllerResult` now includes optional pagination fields (`currentPage`, `totalPages`, `totalItems`, `totalCount`, `hasMorePages`)
+- **Generic Validation Function**: Added `validateSchema<T>()` utility that automatically handles both sync and async schemas
+  - Auto-detects async validators via `schema._def?.async`
+  - Standardizes error format across all validators
+  - Reduces boilerplate from ~10 lines per validator to 1 line
+
+### 🔧 Changed
+- **Validator Generation**: All generated validators now use the reusable `validateSchema()` function
+- **API Response Format**: `sendResponse()` automatically includes pagination fields in responses when present
+
 ## [1.4.1] - 2026-04-02
 
 ### 🐛 Fixed
