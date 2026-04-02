@@ -468,19 +468,25 @@ coverage/
     builder
       .import(["CorsOptions"], "cors")
       .line()
-      .line("const allowedOrigins = process.env.ALLOWED_ORIGINS")
-      .line('  ? process.env.ALLOWED_ORIGINS.split(",")')
-      .line('  : ["http://localhost:3000"];')
-      .line()
       .line("export const corsOptions: CorsOptions = {")
       .line("  origin: (origin, callback) => {")
+      .line(
+        "    // Read allowed origins dynamically to ensure env vars are loaded",
+      )
+      .line("    const allowedOrigins = process.env.ALLOWED_ORIGINS")
+      .line('      ? process.env.ALLOWED_ORIGINS.split(",")')
+      .line('      : ["http://localhost:3000", "http://localhost:5173"];')
+      .line()
       .line("    if (!origin || allowedOrigins.includes(origin)) {")
       .line("      callback(null, true);")
       .line("    } else {")
       .line('      callback(new Error("Not allowed by CORS"));')
       .line("    }")
       .line("  },")
-      .line("  credentials: true")
+      .line("  credentials: true,")
+      .line("  optionsSuccessStatus: 200,")
+      .line("  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],")
+      .line("  allowedHeaders: ['Content-Type', 'Authorization']")
       .line("};");
 
     await writeFile(

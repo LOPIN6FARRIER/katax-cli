@@ -12,9 +12,27 @@
 - 🔧 **Code Generation** - Generate endpoints, CRUD operations, and routes
 - 📦 **Database Support** - PostgreSQL, MySQL, MongoDB, or none
 - 🔐 **JWT Authentication** - Optional JWT auth scaffolding
+- � **Auth Utilities** - Password hashing (bcrypt/argon2), JWT tokens, crypto helpers
+- 📡 **Stream Utilities** - Server-Sent Events (SSE), chunked transfer, async iterators
 - 🚀 **PM2 Deployment** - Deploy to Ubuntu VPS with PM2 integration
 - 📝 **TypeScript First** - Full type safety and IntelliSense support
 - 🎨 **Interactive CLI** - Beautiful prompts and feedback
+
+## 🆕 New Utilities (v2.0+)
+
+Every generated project now includes:
+
+### 🔒 **Auth Utils** (`src/shared/auth.utils.ts`)
+- Password hashing with bcrypt or argon2
+- JWT token generation and verification
+- Crypto utilities (random tokens, encryption, hashing)
+- See [UTILS_GUIDE.md](./UTILS_GUIDE.md#auth-utilities-authutilsts) for details
+
+### 📡 **Stream Utils** (`src/shared/stream.utils.ts`)
+- Server-Sent Events (SSE) with automatic keep-alive
+- Streaming responses for large datasets
+- Async iterator streaming support
+- See [UTILS_GUIDE.md](./UTILS_GUIDE.md#stream-utilities-streamutilsts) for details
 
 ## 📦 Installation
 

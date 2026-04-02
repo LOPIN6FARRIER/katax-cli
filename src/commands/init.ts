@@ -13,6 +13,8 @@ import {
 } from "../utils/file-utils.js";
 import { ProjectConfig } from "../types/index.js";
 import { generateSwaggerSetup } from "../templates/generators/swagger-template.js";
+import { generateStreamUtils } from "../templates/generators/stream-utils-template.js";
+import { generateAuthUtils } from "../templates/generators/auth-utils-template.js";
 
 interface InitOptions {
   force?: boolean;
@@ -134,10 +136,13 @@ export async function initCommand(
     {
       type: "input",
       name: "registryUrl",
-      message: "Registry URL (e.g. https://dashboard.example.com/api/services):",
+      message:
+        "Registry URL (e.g. https://dashboard.example.com/api/services):",
       default: "http://localhost:4000/api/services",
       when: (answers) =>
-        answers.useKataxServiceManager && answers.useRegistry && answers.registryMode === "url",
+        answers.useKataxServiceManager &&
+        answers.useRegistry &&
+        answers.registryMode === "url",
       validate: (input) => {
         if (!input?.trim()) {
           return "Registry URL is required";
@@ -347,7 +352,7 @@ export async function initCommand(
     useSeparateSocketPort: answers.useSeparateSocketPort || false,
     socketPort: answers.socketPort ? parseInt(answers.socketPort) : 3001,
     useRegistry: answers.useRegistry || false,
-    registryMode: answers.useRegistry ? (answers.registryMode || "url") : "none",
+    registryMode: answers.useRegistry ? answers.registryMode || "url" : "none",
     registryUrl: answers.registryUrl,
     useLifecycleHooks: answers.useLifecycleHooks || false,
     initGit: answers.initGit,
@@ -380,8 +385,12 @@ export async function initCommand(
     `  Service Manager: ${config.useKataxServiceManager ? "katax-service-manager" : "manual"}`,
   );
   if (config.useKataxServiceManager) {
-    gray(`  Katax Mode: ${config.kataxMode === "instance" ? "Instance (new Katax())" : "Singleton"}`);
-    gray(`  Registry: ${config.useRegistry ? (config.registryMode === "url" ? `URL (${config.registryUrl})` : "Callback handler") : "No"}`);
+    gray(
+      `  Katax Mode: ${config.kataxMode === "instance" ? "Instance (new Katax())" : "Singleton"}`,
+    );
+    gray(
+      `  Registry: ${config.useRegistry ? (config.registryMode === "url" ? `URL (${config.registryUrl})` : "Callback handler") : "No"}`,
+    );
     gray(`  Lifecycle Hooks: ${config.useLifecycleHooks ? "Yes" : "No"}`);
     gray(`  Redis Cache: ${config.useRedis ? "Yes" : "No"}`);
     gray(
@@ -799,7 +808,11 @@ REDIS_DB=${db || "0"}`;
   }
 
   let registryEnvVars = "";
-  if (config.useKataxServiceManager && config.useRegistry && config.registryMode === "url") {
+  if (
+    config.useKataxServiceManager &&
+    config.useRegistry &&
+    config.registryMode === "url"
+  ) {
     registryEnvVars = `
 # Katax Registry Configuration
 REGISTRY_URL=${config.registryUrl || "http://localhost:4000/api/services"}
@@ -920,7 +933,7 @@ coverage/
     }
   });
 `
-        : "";
+          : "";
 
     const cacheInitCode = config.useRedis
       ? `
@@ -1043,14 +1056,12 @@ coverage/
 
     indexContent = `import { katax } from '${kataxImportSourceRoot}';
 import app from './app.js';${httpImport}
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 // Initialize katax and start server
 async function bootstrap(): Promise<void> {
   try {
     await katax.init({
+      loadEnv: true, // Loads .env automatically
       logger: {
         level: katax.env('LOG_LEVEL', 'info') as 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal',
         prettyPrint: katax.isDev,
@@ -1060,20 +1071,13 @@ async function bootstrap(): Promise<void> {
 ${dbInitCode}${cacheInitCode}${serverSetup}${socketInitCode}
 ${listenCode}
 
-    const shutdown = async (signal: string): Promise<void> => {
-      katax.logger.info({ message: signal + ' received, shutting down...' });
-      await katax.shutdown();
-      process.exit(0);
-    };
-
-    // Graceful shutdown
-    process.on('SIGTERM', () => {
-      void shutdown('SIGTERM');
+    // Register custom shutdown hooks (optional)
+    katax.onShutdown(async () => {
+      katax.logger.info('Running custom cleanup...');
+      // Add your custom cleanup logic here
     });
 
-    process.on('SIGINT', () => {
-      void shutdown('SIGINT');
-    });
+    // Note: SIGTERM/SIGINT handlers are registered automatically by katax
   } catch (err) {
     console.error('Failed to start application:', err);
     process.exit(1);
@@ -1100,6 +1104,17 @@ app.listen(PORT, () => {
   logger.info(\`Server running on http://localhost:\${PORT}\`);
   logger.info(\`API endpoints available at http://localhost:\${PORT}/api\`);
   logger.info(\`Health check: http://localhost:\${PORT}/api/health\`);
+});
+
+// Graceful shutdown handlers
+process.on('SIGTERM', () => {
+  logger.info('SIGTERM received, shutting down...');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  logger.info('SIGINT received, shutting down...');
+  process.exit(0);
 });
 `;
   }
@@ -1487,6 +1502,12 @@ export function requireRole(...roles: string[]) {
       path.join(projectPath, "src/shared/jwt.utils.ts"),
       jwtUtilsContent,
     );
+
+    // Create auth utilities (password hashing, JWT, crypto)
+    await writeFile(
+      path.join(projectPath, "src/shared/auth.utils.ts"),
+      generateAuthUtils(),
+    );
   }
 
   // Create logger utility
@@ -1494,62 +1515,27 @@ export function requireRole(...roles: string[]) {
 
   if (config.useKataxServiceManager) {
     // Version using katax-service-manager
-    // Use Proxy to avoid accessing katax.logger before init()
+    // katax.logger is always available (lazy initialization)
     loggerUtilsContent = `import { katax } from '${kataxImportSourceShared}';
 
 /**
- * Lazy logger proxy - forwards calls to katax.logger after init()
- * This allows importing { logger } without causing errors before init()
+ * Re-export logger for convenience
+ * katax.logger is always available (creates a default logger if not initialized)
+ * Advanced features (broadcast, transports) require katax.init()
  */
-export const logger = new Proxy({} as typeof katax.logger, {
-  get(_, prop: string) {
-    return (katax.logger as any)[prop];
-  }
-});
+export const logger = katax.logger;
 
 /**
- * Log HTTP request
+ * Log HTTP request helper
  */
 export function logRequest(method: string, url: string, statusCode: number, duration: number): void {
-  katax.logger.info({
+  logger.info({
     message: \`\${method} \${url} - \${statusCode} (\${duration}ms)\`,
     method,
     url,
     statusCode,
     duration: \`\${duration}ms\`
   });
-}
-
-/**
- * Log error with context
- */
-export function logError(error: Error, context?: Record<string, any>): void {
-  katax.logger.error({
-    message: error.message,
-    err: error,
-    ...context
-  });
-}
-
-/**
- * Log info message
- */
-export function logInfo(message: string, data?: Record<string, any>): void {
-  katax.logger.info({ message, ...data });
-}
-
-/**
- * Log warning message
- */
-export function logWarning(message: string, data?: Record<string, any>): void {
-  katax.logger.warn({ message, ...data });
-}
-
-/**
- * Log debug message
- */
-export function logDebug(message: string, data?: Record<string, any>): void {
-  katax.logger.debug({ message, ...data });
 }
 `;
   } else {
@@ -1632,6 +1618,12 @@ export function logDebug(message: string, data?: Record<string, any>): void {
     loggerUtilsContent,
   );
 
+  // Create stream utilities (SSE, chunked transfer)
+  await writeFile(
+    path.join(projectPath, "src/shared/stream.utils.ts"),
+    generateStreamUtils(),
+  );
+
   // Create logger middleware
   const loggerMiddlewareContent = `import { Request, Response, NextFunction } from 'express';
 import { logRequest } from '../shared/logger.utils.js';
@@ -1660,12 +1652,13 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
   // Create CORS configuration
   const corsConfigContent = `import { CorsOptions } from 'cors';
 
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',')
-  : ['http://localhost:3000', 'http://localhost:5173'];
-
 export const corsOptions: CorsOptions = {
   origin: (origin, callback) => {
+    // Read allowed origins dynamically to ensure env vars are loaded
+    const allowedOrigins = process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',')
+      : ['http://localhost:3000', 'http://localhost:5173'];
+
     // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
     
