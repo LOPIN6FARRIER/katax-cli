@@ -3,8 +3,8 @@
  * Uses CodeBuilder for consistent code generation
  */
 
-import { CodeBuilder } from '../templates/base/code-builder.js';
-import { EndpointConfig, FieldConfig } from '../types/index.js';
+import { CodeBuilder } from "../templates/base/code-builder.js";
+import { EndpointConfig, FieldConfig } from "../types/index.js";
 
 export function generateValidatorImproved(config: EndpointConfig): string {
   const builder = new CodeBuilder();
@@ -14,22 +14,22 @@ export function generateValidatorImproved(config: EndpointConfig): string {
 
   // Imports
   builder
-    .import(['k', 'kataxInfer'], 'katax-core')
-    .import(['validateSchema', 'ValidationResult'], '../../shared/api.utils.js')
+    .import(["k", "kataxInfer"], "katax-core")
+    .import(["validateSchema", "ValidationResult"], "../../shared/api.utils.js")
     .line();
 
   // Generate Create schema for POST
-  if (method === 'POST') {
+  if (method === "POST") {
     generateCreateSchema(builder, pascalName, camelName, fields);
   }
 
   // Generate Update schema for PUT/PATCH
-  if (method === 'PUT' || method === 'PATCH') {
+  if (method === "PUT" || method === "PATCH") {
     generateUpdateSchema(builder, pascalName, camelName, fields);
   }
 
   // Generate Query schema for GET with query params
-  if (method === 'GET' && fields.length > 0) {
+  if (method === "GET" && fields.length > 0) {
     generateQuerySchema(builder, pascalName, camelName, fields);
   }
 
@@ -37,7 +37,7 @@ export function generateValidatorImproved(config: EndpointConfig): string {
   generateIdValidator(builder, pascalName);
 
   // Generate validator functions
-  builder.section('Validators');
+  builder.section("Validators");
   generateValidatorFunctions(builder, pascalName, camelName, method);
 
   return builder.build();
@@ -50,23 +50,25 @@ function generateCreateSchema(
   builder: CodeBuilder,
   pascalName: string,
   camelName: string,
-  fields: FieldConfig[]
+  fields: FieldConfig[],
 ): void {
   builder
-    .section('Create Schema')
+    .section("Create Schema")
     .comment(`Schema for creating ${camelName}`)
     .line(`export const create${pascalName}Schema = k.object({`);
 
   fields.forEach((field, index) => {
     const isLast = index === fields.length - 1;
     const fieldDef = buildFieldDefinition(field);
-    builder.line(`  ${field.name}: ${fieldDef}${isLast ? '' : ','}`);
+    builder.line(`  ${field.name}: ${fieldDef}${isLast ? "" : ","}`);
   });
 
   builder
-    .line('});')
+    .line("});")
     .line()
-    .line(`export type Create${pascalName}Data = kataxInfer<typeof create${pascalName}Schema>;`)
+    .line(
+      `export type Create${pascalName}Data = kataxInfer<typeof create${pascalName}Schema>;`,
+    )
     .line();
 }
 
@@ -77,23 +79,25 @@ function generateUpdateSchema(
   builder: CodeBuilder,
   pascalName: string,
   camelName: string,
-  fields: FieldConfig[]
+  fields: FieldConfig[],
 ): void {
   builder
-    .section('Update Schema')
+    .section("Update Schema")
     .comment(`Schema for updating ${camelName}`)
     .line(`export const update${pascalName}Schema = k.object({`);
 
   fields.forEach((field, index) => {
     const isLast = index === fields.length - 1;
     const fieldDef = buildFieldDefinition(field, true); // All optional for updates
-    builder.line(`  ${field.name}: ${fieldDef}${isLast ? '' : ','}`);
+    builder.line(`  ${field.name}: ${fieldDef}${isLast ? "" : ","}`);
   });
 
   builder
-    .line('});')
+    .line("});")
     .line()
-    .line(`export type Update${pascalName}Data = kataxInfer<typeof update${pascalName}Schema>;`)
+    .line(
+      `export type Update${pascalName}Data = kataxInfer<typeof update${pascalName}Schema>;`,
+    )
     .line();
 }
 
@@ -104,31 +108,33 @@ function generateQuerySchema(
   builder: CodeBuilder,
   pascalName: string,
   camelName: string,
-  fields: FieldConfig[]
+  fields: FieldConfig[],
 ): void {
   builder
-    .section('Query Schema')
+    .section("Query Schema")
     .comment(`Schema for ${camelName} query parameters`)
     .line(`export const ${camelName}QuerySchema = k.object({`);
 
   // Common query params
   builder
-    .line('  page: k.number().min(1).optional(),')
-    .line('  limit: k.number().min(1).max(100).optional(),')
-    .line('  sort: k.string().optional(),')
+    .line("  page: k.number().min(1).optional(),")
+    .line("  limit: k.number().min(1).max(100).optional(),")
+    .line("  sort: k.string().optional(),")
     .line('  order: k.enum(["asc", "desc"]).optional(),');
 
   // Add searchable fields
   fields
-    .filter(f => f.type === 'string' || f.type === 'email')
-    .forEach(field => {
+    .filter((f) => f.type === "string" || f.type === "email")
+    .forEach((field) => {
       builder.line(`  ${field.name}: k.string().optional(),`);
     });
 
   builder
-    .line('});')
+    .line("});")
     .line()
-    .line(`export type ${pascalName}QueryData = kataxInfer<typeof ${camelName}QuerySchema>;`)
+    .line(
+      `export type ${pascalName}QueryData = kataxInfer<typeof ${camelName}QuerySchema>;`,
+    )
     .line();
 }
 
@@ -137,9 +143,11 @@ function generateQuerySchema(
  */
 function generateIdValidator(builder: CodeBuilder, pascalName: string): void {
   builder
-    .section('ID Validator')
+    .section("ID Validator")
     .comment(`Schema for ${pascalName} ID validation`)
-    .line(`export const ${pascalName.toLowerCase()}IdSchema = k.string().uuid();`)
+    .line(
+      `export const ${pascalName.toLowerCase()}IdSchema = k.string().uuid();`,
+    )
     .line();
 }
 
@@ -150,97 +158,116 @@ function generateValidatorFunctions(
   builder: CodeBuilder,
   pascalName: string,
   camelName: string,
-  method: string
+  method: string,
 ): void {
-  if (method === 'POST') {
+  if (method === "POST") {
     builder
       .comment(`Validate create ${camelName} data`)
-      .line(`export async function validate${pascalName}(data: unknown): Promise<ValidationResult<Create${pascalName}Data>> {`)
-      .line(`  return validateSchema<Create${pascalName}Data>(create${pascalName}Schema, data);`)
-      .line('}')
+      .line(
+        `export async function validate${pascalName}(data: unknown): Promise<ValidationResult<Create${pascalName}Data>> {`,
+      )
+      .line(
+        `  return validateSchema<Create${pascalName}Data>(create${pascalName}Schema, data);`,
+      )
+      .line("}")
       .line();
   }
 
-  if (method === 'PUT' || method === 'PATCH') {
+  if (method === "PUT" || method === "PATCH") {
     builder
       .comment(`Validate update ${camelName} data`)
-      .line(`export async function validate${pascalName}(data: unknown): Promise<ValidationResult<Update${pascalName}Data>> {`)
-      .line(`  return validateSchema<Update${pascalName}Data>(update${pascalName}Schema, data);`)
-      .line('}')
+      .line(
+        `export async function validate${pascalName}(data: unknown): Promise<ValidationResult<Update${pascalName}Data>> {`,
+      )
+      .line(
+        `  return validateSchema<Update${pascalName}Data>(update${pascalName}Schema, data);`,
+      )
+      .line("}")
       .line();
   }
 
-  if (method === 'GET') {
+  if (method === "GET") {
     builder
       .comment(`Validate ${camelName} query parameters`)
-      .line(`export async function validate${pascalName}Query(data: unknown): Promise<ValidationResult<${pascalName}QueryParams>> {`)
-      .line(`  return validateSchema<${pascalName}QueryParams>(${camelName}QuerySchema, data);`)
-      .line('}')
+      .line(
+        `export async function validate${pascalName}Query(data: unknown): Promise<ValidationResult<${pascalName}QueryParams>> {`,
+      )
+      .line(
+        `  return validateSchema<${pascalName}QueryParams>(${camelName}QuerySchema, data);`,
+      )
+      .line("}")
       .line();
   }
 
   // ID validator
   builder
     .comment(`Validate ${camelName} ID`)
-    .line(`export async function validate${pascalName}Id(id: unknown): Promise<ValidationResult<string>> {`)
-    .line(`  return validateSchema<string>(${pascalName.toLowerCase()}IdSchema, id);`)
-    .line('}')
+    .line(
+      `export async function validate${pascalName}Id(id: unknown): Promise<ValidationResult<string>> {`,
+    )
+    .line(
+      `  return validateSchema<string>(${pascalName.toLowerCase()}IdSchema, id);`,
+    )
+    .line("}")
     .line();
 }
 
 /**
  * Build field definition with rules
  */
-function buildFieldDefinition(field: FieldConfig, forceOptional: boolean = false): string {
-  let def = '';
+function buildFieldDefinition(
+  field: FieldConfig,
+  forceOptional: boolean = false,
+): string {
+  let def = "";
 
   // Base type
   switch (field.type) {
-    case 'string':
-      def = 'k.string()';
+    case "string":
+      def = "k.string()";
       break;
-    case 'number':
-      def = 'k.number()';
+    case "number":
+      def = "k.number()";
       break;
-    case 'boolean':
-      def = 'k.boolean()';
+    case "boolean":
+      def = "k.boolean()";
       break;
-    case 'date':
-      def = 'k.date()';
+    case "date":
+      def = "k.date()";
       break;
-    case 'email':
-      def = 'k.string().email()';
+    case "email":
+      def = "k.string().email()";
       break;
-    case 'array':
-      def = 'k.array(k.string())';
+    case "array":
+      def = "k.array(k.string())";
       break;
-    case 'object':
-      def = 'k.object({})';
+    case "object":
+      def = "k.object({})";
       break;
     default:
-      def = 'k.string()';
+      def = "k.string()";
   }
 
   // Add rules
   if (field.rules && field.rules.length > 0) {
-    field.rules.forEach(rule => {
+    field.rules.forEach((rule) => {
       switch (rule.type) {
-        case 'minLength':
+        case "minLength":
           def += `.minLength(${rule.value})`;
           break;
-        case 'maxLength':
+        case "maxLength":
           def += `.maxLength(${rule.value})`;
           break;
-        case 'min':
+        case "min":
           def += `.min(${rule.value})`;
           break;
-        case 'max':
+        case "max":
           def += `.max(${rule.value})`;
           break;
-        case 'email':
-          def += '.email()';
+        case "email":
+          def += ".email()";
           break;
-        case 'regex':
+        case "regex":
           if (rule.value) {
             def += `.regex(${rule.value})`;
           }
@@ -251,7 +278,7 @@ function buildFieldDefinition(field: FieldConfig, forceOptional: boolean = false
 
   // Make optional if not required or if forceOptional
   if (!field.required || forceOptional) {
-    def += '.optional()';
+    def += ".optional()";
   }
 
   return def;
@@ -263,8 +290,8 @@ function buildFieldDefinition(field: FieldConfig, forceOptional: boolean = false
 function toPascalCase(str: string): string {
   return str
     .split(/[-_]/)
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join('');
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join("");
 }
 
 /**

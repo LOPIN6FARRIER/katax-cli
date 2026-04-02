@@ -4,7 +4,13 @@ import ora from "ora";
 import path from "path";
 import fs from "fs/promises";
 import { success, error, warning, gray, title, info } from "../utils/logger.js";
-import { fileExists, writeFile, ensureDir, toPascalCase, toCamelCase } from "../utils/file-utils.js";
+import {
+  fileExists,
+  writeFile,
+  ensureDir,
+  toPascalCase,
+  toCamelCase,
+} from "../utils/file-utils.js";
 import { FieldConfig } from "../types/index.js";
 import { autoRegenerateDocs } from "./generate-docs.js";
 
@@ -291,9 +297,12 @@ function generateValidator(
       `export const create${pascalName}Schema = k.object({`,
     );
     fields.forEach((field, i) => {
-      let schema = field.type === "email" ? "k.string().email()" : `k.${field.type}()`;
+      let schema =
+        field.type === "email" ? "k.string().email()" : `k.${field.type}()`;
       if (!field.required) schema += ".optional()";
-      lines.push(`  ${field.name}: ${schema}${i < fields.length - 1 ? "," : ""}`);
+      lines.push(
+        `  ${field.name}: ${schema}${i < fields.length - 1 ? "," : ""}`,
+      );
     });
     lines.push(
       "});",
@@ -312,8 +321,13 @@ function generateValidator(
       `export const update${pascalName}Schema = k.object({`,
     );
     fields.forEach((field, i) => {
-      const schema = field.type === "email" ? "k.string().email().optional()" : `k.${field.type}().optional()`;
-      lines.push(`  ${field.name}: ${schema}${i < fields.length - 1 ? "," : ""}`);
+      const schema =
+        field.type === "email"
+          ? "k.string().email().optional()"
+          : `k.${field.type}().optional()`;
+      lines.push(
+        `  ${field.name}: ${schema}${i < fields.length - 1 ? "," : ""}`,
+      );
     });
     lines.push(
       "});",
@@ -373,26 +387,33 @@ function generateController(
 ): string {
   const lines: string[] = [
     "import { ControllerResult, createSuccessResult, createErrorResult } from '../../shared/api.utils.js';",
-    "import { logger } from '../../shared/logger.utils.js';",
   ];
 
   // Import types
   const types: string[] = [];
-  if (methods.includes("GET")) types.push(`${pascalName}Query`, `${pascalName}IdParams`);
+  if (methods.includes("GET"))
+    types.push(`${pascalName}Query`, `${pascalName}IdParams`);
   if (methods.includes("POST")) types.push(`Create${pascalName}Data`);
   if (methods.some((m) => ["PUT", "PATCH"].includes(m))) {
     types.push(`Update${pascalName}Data`);
-    if (!types.includes(`${pascalName}IdParams`)) types.push(`${pascalName}IdParams`);
+    if (!types.includes(`${pascalName}IdParams`))
+      types.push(`${pascalName}IdParams`);
   }
   if (methods.includes("DELETE") && !types.includes(`${pascalName}IdParams`)) {
     types.push(`${pascalName}IdParams`);
   }
 
   if (types.length > 0) {
-    lines.push(`import { ${types.join(", ")} } from './${camelName}.validator.js';`);
+    lines.push(
+      `import { ${types.join(", ")} } from './${camelName}.validator.js';`,
+    );
   }
 
-  lines.push("", "// ==================== CONTROLLERS ====================", "");
+  lines.push(
+    "",
+    "// ==================== CONTROLLERS ====================",
+    "",
+  );
 
   // GET list
   if (methods.includes("GET")) {
@@ -402,8 +423,6 @@ function generateController(
       " */",
       `export async function list${pascalName}s(query: ${pascalName}Query): Promise<ControllerResult<any[]>> {`,
       "  try {",
-      `    logger.debug({ message: 'Listing ${camelName}s', query });`,
-      "",
       "    // TODO: Implement database query",
       `    const mock${pascalName}s = [`,
       `      { id: '1', ${fields.length > 0 ? `${fields[0].name}: 'Sample 1',` : ""} createdAt: new Date().toISOString() },`,
@@ -412,7 +431,6 @@ function generateController(
       "",
       `    return createSuccessResult('${pascalName}s retrieved', mock${pascalName}s);`,
       "  } catch (error) {",
-      `    logger.error({ message: 'Error listing ${camelName}s', err: error });`,
       `    return createErrorResult('Failed to list ${camelName}s', error instanceof Error ? error.message : 'Unknown error', 500);`,
       "  }",
       "}",
@@ -426,14 +444,11 @@ function generateController(
       " */",
       `export async function get${pascalName}(params: ${pascalName}IdParams): Promise<ControllerResult<any>> {`,
       "  try {",
-      `    logger.debug({ message: 'Getting ${camelName}', id: params.id });`,
-      "",
       "    // TODO: Implement database query",
       `    const mock${pascalName} = { id: params.id, ${fields.length > 0 ? `${fields[0].name}: 'Sample',` : ""} createdAt: new Date().toISOString() };`,
       "",
       `    return createSuccessResult('${pascalName} retrieved', mock${pascalName});`,
       "  } catch (error) {",
-      `    logger.error({ message: 'Error getting ${camelName}', err: error });`,
       `    return createErrorResult('Failed to get ${camelName}', error instanceof Error ? error.message : 'Unknown error', 500);`,
       "  }",
       "}",
@@ -449,14 +464,11 @@ function generateController(
       " */",
       `export async function create${pascalName}(data: Create${pascalName}Data): Promise<ControllerResult<any>> {`,
       "  try {",
-      `    logger.debug({ message: 'Creating ${camelName}', data });`,
-      "",
       "    // TODO: Implement database insertion",
       `    const new${pascalName} = { id: Math.random().toString(36).substr(2, 9), ...data, createdAt: new Date().toISOString() };`,
       "",
       `    return createSuccessResult('${pascalName} created', new${pascalName}, undefined, 201);`,
       "  } catch (error) {",
-      `    logger.error({ message: 'Error creating ${camelName}', err: error });`,
       `    return createErrorResult('Failed to create ${camelName}', error instanceof Error ? error.message : 'Unknown error', 500);`,
       "  }",
       "}",
@@ -472,14 +484,11 @@ function generateController(
       " */",
       `export async function update${pascalName}(params: ${pascalName}IdParams, data: Update${pascalName}Data): Promise<ControllerResult<any>> {`,
       "  try {",
-      `    logger.debug({ message: 'Updating ${camelName}', id: params.id, data });`,
-      "",
       "    // TODO: Implement database update",
       `    const updated${pascalName} = { id: params.id, ...data, updatedAt: new Date().toISOString() };`,
       "",
       `    return createSuccessResult('${pascalName} updated', updated${pascalName});`,
       "  } catch (error) {",
-      `    logger.error({ message: 'Error updating ${camelName}', err: error });`,
       `    return createErrorResult('Failed to update ${camelName}', error instanceof Error ? error.message : 'Unknown error', 500);`,
       "  }",
       "}",
@@ -495,13 +504,10 @@ function generateController(
       " */",
       `export async function delete${pascalName}(params: ${pascalName}IdParams): Promise<ControllerResult<void>> {`,
       "  try {",
-      `    logger.debug({ message: 'Deleting ${camelName}', id: params.id });`,
-      "",
       "    // TODO: Implement database deletion",
       "",
       `    return createSuccessResult('${pascalName} deleted');`,
       "  } catch (error) {",
-      `    logger.error({ message: 'Error deleting ${camelName}', err: error });`,
       `    return createErrorResult('Failed to delete ${camelName}', error instanceof Error ? error.message : 'Unknown error', 500);`,
       "  }",
       "}",
@@ -525,26 +531,41 @@ function generateHandler(
 
   // Import controllers
   const controllerImports: string[] = [];
-  if (methods.includes("GET")) controllerImports.push(`list${pascalName}s`, `get${pascalName}`);
+  if (methods.includes("GET"))
+    controllerImports.push(`list${pascalName}s`, `get${pascalName}`);
   if (methods.includes("POST")) controllerImports.push(`create${pascalName}`);
-  if (methods.some((m) => ["PUT", "PATCH"].includes(m))) controllerImports.push(`update${pascalName}`);
+  if (methods.some((m) => ["PUT", "PATCH"].includes(m)))
+    controllerImports.push(`update${pascalName}`);
   if (methods.includes("DELETE")) controllerImports.push(`delete${pascalName}`);
 
-  lines.push(`import { ${controllerImports.join(", ")} } from './${lowerName}.controller.js';`);
+  lines.push(
+    `import { ${controllerImports.join(", ")} } from './${lowerName}.controller.js';`,
+  );
 
   // Import validators
   const validatorImports: string[] = [];
-  if (methods.includes("GET")) validatorImports.push(`validate${pascalName}Query`, `validate${pascalName}Id`);
-  if (methods.includes("POST")) validatorImports.push(`validate${pascalName}Create`);
+  if (methods.includes("GET"))
+    validatorImports.push(
+      `validate${pascalName}Query`,
+      `validate${pascalName}Id`,
+    );
+  if (methods.includes("POST"))
+    validatorImports.push(`validate${pascalName}Create`);
   if (methods.some((m) => ["PUT", "PATCH"].includes(m))) {
     validatorImports.push(`validate${pascalName}Update`);
-    if (!validatorImports.includes(`validate${pascalName}Id`)) validatorImports.push(`validate${pascalName}Id`);
+    if (!validatorImports.includes(`validate${pascalName}Id`))
+      validatorImports.push(`validate${pascalName}Id`);
   }
-  if (methods.includes("DELETE") && !validatorImports.includes(`validate${pascalName}Id`)) {
+  if (
+    methods.includes("DELETE") &&
+    !validatorImports.includes(`validate${pascalName}Id`)
+  ) {
     validatorImports.push(`validate${pascalName}Id`);
   }
 
-  lines.push(`import { ${validatorImports.join(", ")} } from './${lowerName}.validator.js';`);
+  lines.push(
+    `import { ${validatorImports.join(", ")} } from './${lowerName}.validator.js';`,
+  );
 
   lines.push("", "// ==================== HANDLERS ====================", "");
 
@@ -657,18 +678,22 @@ function generateRoutes(
   lowerName: string,
   methods: HttpMethod[],
 ): string {
-  const lines: string[] = [
-    "import { Router } from 'express';",
-  ];
+  const lines: string[] = ["import { Router } from 'express';"];
 
   // Import handlers
   const handlerImports: string[] = [];
-  if (methods.includes("GET")) handlerImports.push(`list${pascalName}sHandler`, `get${pascalName}Handler`);
-  if (methods.includes("POST")) handlerImports.push(`create${pascalName}Handler`);
-  if (methods.some((m) => ["PUT", "PATCH"].includes(m))) handlerImports.push(`update${pascalName}Handler`);
-  if (methods.includes("DELETE")) handlerImports.push(`delete${pascalName}Handler`);
+  if (methods.includes("GET"))
+    handlerImports.push(`list${pascalName}sHandler`, `get${pascalName}Handler`);
+  if (methods.includes("POST"))
+    handlerImports.push(`create${pascalName}Handler`);
+  if (methods.some((m) => ["PUT", "PATCH"].includes(m)))
+    handlerImports.push(`update${pascalName}Handler`);
+  if (methods.includes("DELETE"))
+    handlerImports.push(`delete${pascalName}Handler`);
 
-  lines.push(`import { ${handlerImports.join(", ")} } from './${lowerName}.handler.js';`);
+  lines.push(
+    `import { ${handlerImports.join(", ")} } from './${lowerName}.handler.js';`,
+  );
 
   lines.push(
     "",

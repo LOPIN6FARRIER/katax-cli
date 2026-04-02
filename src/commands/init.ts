@@ -665,7 +665,7 @@ async function createProjectStructure(
       cors: "^2.8.5",
       dotenv: "^16.3.1",
       ...(config.useKataxServiceManager
-        ? { "katax-service-manager": "^0.3.3", "pino-pretty": "^10.3.1" }
+        ? { "katax-service-manager": "latest", "pino-pretty": "^10.3.1" }
         : { pino: "^8.17.2", "pino-pretty": "^10.3.1" }),
       ...(config.validation === "katax-core" && { "katax-core": "latest" }),
       ...(config.authentication === "jwt" && {
@@ -1073,7 +1073,7 @@ ${listenCode}
 
     // Register custom shutdown hooks (optional)
     katax.onShutdown(async () => {
-      katax.logger.info('Running custom cleanup...');
+      katax.logger.info({ message: 'Running custom cleanup...' });
       // Add your custom cleanup logic here
     });
 
@@ -1101,19 +1101,19 @@ validateEnvironment();
 const PORT = process.env.PORT || ${config.port};
 
 app.listen(PORT, () => {
-  logger.info(\`Server running on http://localhost:\${PORT}\`);
-  logger.info(\`API endpoints available at http://localhost:\${PORT}/api\`);
-  logger.info(\`Health check: http://localhost:\${PORT}/api/health\`);
+  logger.info({ message: \`Server running on http://localhost:\${PORT}\` });
+  logger.info({ message: \`API endpoints available at http://localhost:\${PORT}/api\` });
+  logger.info({ message: \`Health check: http://localhost:\${PORT}/api/health\` });
 });
 
 // Graceful shutdown handlers
 process.on('SIGTERM', () => {
-  logger.info('SIGTERM received, shutting down...');
+  logger.info({ message: 'SIGTERM received, shutting down...' });
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
-  logger.info('SIGINT received, shutting down...');
+  logger.info({ message: 'SIGINT received, shutting down...' });
   process.exit(0);
 });
 `;
@@ -1188,7 +1188,42 @@ export default router;
   await writeFile(path.join(projectPath, "src/api/routes.ts"), routesContent);
 
   // Create error middleware
-  const errorMiddlewareContent = `import { Request, Response, NextFunction } from 'express';
+  const errorMiddlewareContent = config.useKataxServiceManager
+    ? `import { Request, Response, NextFunction } from 'express';
+import { katax } from '${kataxImportSourceShared}';
+
+export interface ApiError extends Error {
+  statusCode?: number;
+}
+
+export function errorMiddleware(
+  err: ApiError,
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  const statusCode = err.statusCode || 500;
+  const message = err.message || 'Internal Server Error';
+
+  katax.logger.error({
+    err,
+    req: {
+      method: req.method,
+      url: req.url,
+      headers: req.headers
+    },
+    statusCode,
+    message
+  });
+
+  res.status(statusCode).json({
+    success: false,
+    message,
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+}
+`
+    : `import { Request, Response, NextFunction } from 'express';
 import { logger } from '../shared/logger.utils.js';
 
 export interface ApiError extends Error {
@@ -1235,8 +1270,18 @@ export function errorMiddleware(
 
   // Create shared utilities
   if (config.validation === "katax-core") {
+    const apiUtilsLoggerImport = config.useKataxServiceManager
+      ? `import { katax } from '${kataxImportSourceShared}';`
+      : "import { logger } from './logger.utils.js';";
+    const apiUtilsWarnLogger = config.useKataxServiceManager
+      ? "katax.logger.warn"
+      : "logger.warn";
+    const apiUtilsErrorLogger = config.useKataxServiceManager
+      ? "katax.logger.error"
+      : "logger.error";
+
     const apiUtilsContent = `import { Request, Response } from 'express';
-import { logger } from './logger.utils.js';
+${apiUtilsLoggerImport}
 
 export interface ControllerResult<T = any> {
   success: boolean;
@@ -1284,10 +1329,31 @@ export function createErrorResult(
   return { success: false, message, error, statusCode };
 }
 
-export interface ValidationResult<T = any> {
+export interface ValidationError {
+  field: string;
+  message: string;
+}
+
+export interface ValidationResult<T = unknown> {
   isValid: boolean;
   data?: T;
-  errors?: any[];
+  errors?: ValidationError[];
+}
+
+type KataxIssue = {
+  path: (string | number)[];
+  message: string;
+};
+
+type KataxSafeParseResult<T> =
+  | { success: true; data: T }
+  | { success: false; issues: KataxIssue[] };
+
+export interface KataxSchema<T = unknown> {
+  safeParse(input: unknown): KataxSafeParseResult<T>;
+  safeParseAsync(input: unknown): Promise<KataxSafeParseResult<T>>;
+  hasAsyncValidation?: () => boolean;
+  _asyncValidators?: unknown[];
 }
 
 /**
@@ -1299,13 +1365,16 @@ export interface ValidationResult<T = any> {
  * @returns ValidationResult con datos validados o errores
  */
 export async function validateSchema<T>(
-  schema: any,
+  schema: KataxSchema<T>,
   data: unknown
 ): Promise<ValidationResult<T>> {
   // Detectar si el schema tiene validadores asíncronos
-  const hasAsyncValidators = schema._def?.async || false;
+  const hasAsyncValidators =
+    typeof schema.hasAsyncValidation === 'function'
+      ? schema.hasAsyncValidation()
+      : !!(schema._asyncValidators && schema._asyncValidators.length > 0);
 
-  let result: any;
+  let result: KataxSafeParseResult<T>;
 
   try {
     if (hasAsyncValidators) {
@@ -1329,10 +1398,10 @@ export async function validateSchema<T>(
   }
 
   if (!result.success) {
-    const errors = result.issues?.map((issue: any) => ({
+    const errors = result.issues.map((issue) => ({
       field: issue.path.join('.') || 'root',
       message: issue.message
-    })) || [];
+    }));
 
     return {
       isValid: false,
@@ -1346,7 +1415,7 @@ export async function validateSchema<T>(
   };
 }
 
-export async function sendResponse<TValidation = any, TResponse = any>(
+export async function sendResponse<TValidation = unknown, TResponse = unknown>(
   req: Request,
   res: Response,
   validator: () => Promise<ValidationResult<TValidation>>,
@@ -1358,7 +1427,7 @@ export async function sendResponse<TValidation = any, TResponse = any>(
     
     if (!validationResult.isValid) {
       // Validation error
-      logger.warn({
+      ${apiUtilsWarnLogger}({
         method: req.method,
         path: req.path,
         errors: validationResult.errors, 
@@ -1380,7 +1449,18 @@ export async function sendResponse<TValidation = any, TResponse = any>(
     // 3. Build HTTP response
     const statusCode = controllerResult.statusCode || (controllerResult.success ? 200 : 400);
 
-    const response: any = {
+    interface ResponsePayload {
+      success: boolean;
+      message: string;
+      error?: string;
+      totalItems?: number;
+      currentPage?: number;
+      totalPages?: number;
+      hasMorePages?: boolean;
+      data?: TResponse;
+    }
+
+    const response: ResponsePayload = {
       success: controllerResult.success,
       message: controllerResult.message
     };
@@ -1413,7 +1493,7 @@ export async function sendResponse<TValidation = any, TResponse = any>(
 
   } catch (error) {
     // Internal server error
-    logger.error({
+    ${apiUtilsErrorLogger}({
       err: error,
       method: req.method,
       path: req.path, 
@@ -1603,37 +1683,9 @@ export function requireRole(...roles: string[]) {
     );
   }
 
-  // Create logger utility
-  let loggerUtilsContent: string;
-
-  if (config.useKataxServiceManager) {
-    // Version using katax-service-manager
-    // katax.logger is always available (lazy initialization)
-    loggerUtilsContent = `import { katax } from '${kataxImportSourceShared}';
-
-/**
- * Re-export logger for convenience
- * katax.logger is always available (creates a default logger if not initialized)
- * Advanced features (broadcast, transports) require katax.init()
- */
-export const logger = katax.logger;
-
-/**
- * Log HTTP request helper
- */
-export function logRequest(method: string, url: string, statusCode: number, duration: number): void {
-  logger.info({
-    message: \`\${method} \${url} - \${statusCode} (\${duration}ms)\`,
-    method,
-    url,
-    statusCode,
-    duration: \`\${duration}ms\`
-  });
-}
-`;
-  } else {
-    // Manual pino version
-    loggerUtilsContent = `import pino from 'pino';
+  // Create logger utility only for manual mode
+  if (!config.useKataxServiceManager) {
+    const loggerUtilsContent = `import pino from 'pino';
 
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
@@ -1676,40 +1728,41 @@ export function logRequest(method: string, url: string, statusCode: number, dura
 /**
  * Log error with context
  */
-export function logError(error: Error, context?: Record<string, any>): void {
+export function logError(error: Error, context?: Record<string, unknown>): void {
   logger.error({
+    message: error.message,
     err: error,
     ...context
-  }, error.message);
+  });
 }
 
 /**
  * Log info message
  */
-export function logInfo(message: string, data?: Record<string, any>): void {
-  logger.info(data, message);
+export function logInfo(message: string, data?: Record<string, unknown>): void {
+  logger.info({ message, ...(data || {}) });
 }
 
 /**
  * Log warning message
  */
-export function logWarning(message: string, data?: Record<string, any>): void {
-  logger.warn(data, message);
+export function logWarning(message: string, data?: Record<string, unknown>): void {
+  logger.warn({ message, ...(data || {}) });
 }
 
 /**
  * Log debug message (only in development)
  */
-export function logDebug(message: string, data?: Record<string, any>): void {
-  logger.debug(data, message);
+export function logDebug(message: string, data?: Record<string, unknown>): void {
+  logger.debug({ message, ...(data || {}) });
 }
 `;
-  }
 
-  await writeFile(
-    path.join(projectPath, "src/shared/logger.utils.ts"),
-    loggerUtilsContent,
-  );
+    await writeFile(
+      path.join(projectPath, "src/shared/logger.utils.ts"),
+      loggerUtilsContent,
+    );
+  }
 
   // Create stream utilities (SSE, chunked transfer)
   await writeFile(
@@ -1718,7 +1771,36 @@ export function logDebug(message: string, data?: Record<string, any>): void {
   );
 
   // Create logger middleware
-  const loggerMiddlewareContent = `import { Request, Response, NextFunction } from 'express';
+  const loggerMiddlewareContent = config.useKataxServiceManager
+    ? `import { Request, Response, NextFunction } from 'express';
+import { katax } from '${kataxImportSourceShared}';
+
+function logRequest(method: string, url: string, statusCode: number, duration: number): void {
+  katax.logger.info({
+    message: \`\${method} \${url} - \${statusCode} (\${duration}ms)\`,
+    method,
+    url,
+    statusCode,
+    duration
+  });
+}
+
+/**
+ * Express middleware to log all HTTP requests
+ */
+export function requestLogger(req: Request, res: Response, next: NextFunction): void {
+  const startTime = Date.now();
+
+  // Log response when it finishes
+  res.on('finish', () => {
+    const duration = Date.now() - startTime;
+    logRequest(req.method, req.url, res.statusCode, duration);
+  });
+
+  next();
+}
+`
+    : `import { Request, Response, NextFunction } from 'express';
 import { logRequest } from '../shared/logger.utils.js';
 
 /**
@@ -1774,7 +1856,17 @@ export const corsOptions: CorsOptions = {
   );
 
   // Create environment validator
-  const envValidatorContent = `import { logger } from '../shared/logger.utils.js';
+  const envLoggerImport = config.useKataxServiceManager
+    ? `import { katax } from '${kataxImportSourceShared}';`
+    : "import { logger } from '../shared/logger.utils.js';";
+  const envErrorLogger = config.useKataxServiceManager
+    ? "katax.logger.error"
+    : "logger.error";
+  const envInfoLogger = config.useKataxServiceManager
+    ? "katax.logger.info"
+    : "logger.info";
+
+  const envValidatorContent = `${envLoggerImport}
 
 interface RequiredEnvVars {
   [key: string]: string;
@@ -1799,11 +1891,11 @@ ${config.database !== "none" ? `  // Database variables\n  required.DATABASE_URL
   }
 
   if (missing.length > 0) {
-    logger.error({message:\`Missing required environment variables: \${missing.join(', ')}\`});
-    logger.error({message:'Please check your .env file'});
+    ${envErrorLogger}({message:\`Missing required environment variables: \${missing.join(', ')}\`});
+    ${envErrorLogger}({message:'Please check your .env file'});
   }
 
-  logger.info({message:'Environment variables validated successfully'});
+  ${envInfoLogger}({message:'Environment variables validated successfully'});
 }
 `;
 
@@ -2087,11 +2179,23 @@ async function createHelloEndpoint(
 ): Promise<void> {
   const helloPath = path.join(projectPath, "src/api/hello");
 
+  const helloLoggerImport = config.useKataxServiceManager
+    ? config.kataxMode === "instance"
+      ? "import { katax } from '../../config/katax.instance.js';"
+      : "import { katax } from 'katax-service-manager';"
+    : "import { logger } from '../../shared/logger.utils.js';";
+  const helloDebugLogger = config.useKataxServiceManager
+    ? "katax.logger.debug"
+    : "logger.debug";
+  const helloErrorLogger = config.useKataxServiceManager
+    ? "katax.logger.error"
+    : "logger.error";
+
   // hello.controller.ts
   const controllerContent = [
     "import { ControllerResult, createSuccessResult, createErrorResult } from '../../shared/api.utils.js';",
     "import { HelloQuery } from './hello.validator.js';",
-    "import { logger } from '../../shared/logger.utils.js';",
+    helloLoggerImport,
     "",
     "/**",
     " * Get hello message",
@@ -2099,7 +2203,7 @@ async function createHelloEndpoint(
     "export async function getHello(queryData: HelloQuery): Promise<ControllerResult<{ message: string; timestamp: string }>> {",
     "  try {",
     "    const name = queryData.name || 'World';",
-    "    logger.debug({ name, message: 'Processing hello request' });",
+    `    ${helloDebugLogger}({ name, message: 'Processing hello request' });`,
     "    ",
     "    return createSuccessResult(",
     "      'Hello endpoint working!',",
@@ -2109,7 +2213,7 @@ async function createHelloEndpoint(
     "      }",
     "    );",
     "  } catch (error) {",
-    "    logger.error({ err: error, message: 'Error in getHello controller' });",
+    `    ${helloErrorLogger}({ err: error, message: 'Error in getHello controller' });`,
     "    return createErrorResult(",
     "      'Failed to get hello message',",
     "      error instanceof Error ? error.message : 'Unknown error',",

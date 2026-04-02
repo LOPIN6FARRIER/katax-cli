@@ -55,6 +55,7 @@ export interface FieldConfig {
     type: "unique" | "exists" | "custom";
     table?: string;
     column?: string;
+    message?: string;
   };
 }
 
@@ -68,7 +69,7 @@ export interface ValidationRule {
     | "regex"
     | "oneOf"
     | "custom";
-  value?: any;
+  value?: unknown;
   message?: string;
 }
 

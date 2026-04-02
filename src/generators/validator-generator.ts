@@ -22,6 +22,11 @@ export function generateValidator(config: EndpointConfig): string {
     
     fields.forEach(field => {
       if (field.asyncValidator) {
+        const asyncMessage = field.asyncValidator.message ||
+          (field.asyncValidator.type === 'exists'
+            ? `This ${field.name} does not exist`
+            : `This ${field.name} is already taken`);
+
         content += `/**\n * Check if ${field.name} is unique\n */\n`;
         content += `export const ${field.name}UniqueValidator: AsyncValidator<string> = async (value, path) => {\n`;
         content += `  console.log(\`[ASYNC] Checking ${field.name}: \${value}\`);\n`;
@@ -33,7 +38,7 @@ export function generateValidator(config: EndpointConfig): string {
         content += `  // );\n`;
         content += `  // \n`;
         content += `  // if (result.rows.length > 0) {\n`;
-        content += `  //   return [{ path, message: "This ${field.name} is already taken" }];\n`;
+        content += `  //   return [{ path, message: ${JSON.stringify(asyncMessage)} }];\n`;
         content += `  // }\n`;
         content += `  \n`;
         content += `  return [];\n`;

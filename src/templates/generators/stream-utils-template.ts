@@ -13,7 +13,6 @@ export function generateStreamUtils(): string {
     .comment("Server-Sent Events (SSE) and streaming responses")
     .line()
     .import(["Request", "Response"], "express")
-    .import(["logger"], "./logger.utils.js")
     .line()
     .section("Server-Sent Events (SSE)")
     .line()
@@ -45,9 +44,7 @@ export function generateStreamUtils(): string {
     .line("    res.write(`data: ${JSON.stringify(data)}\\n\\n`);")
     .line("    return true;")
     .line("  } catch (error) {")
-    .line(
-      '    logger.error({ message: "Failed to send SSE event", err: error });',
-    )
+    .line('    console.error("Failed to send SSE event", error);')
     .line("    return false;")
     .line("  }")
     .line("}")
@@ -71,9 +68,7 @@ export function generateStreamUtils(): string {
     .line('    res.write("data: {}\\n\\n");')
     .line("    res.end();")
     .line("  } catch (error) {")
-    .line(
-      '    logger.error({ message: "Failed to close SSE connection", err: error });',
-    )
+    .line('    console.error("Failed to close SSE connection", error);')
     .line("  }")
     .line("}")
     .line()
@@ -191,7 +186,7 @@ export function generateStreamUtils(): string {
     .line("    if (options?.onError) {")
     .line("      options.onError(error as Error);")
     .line("    }")
-    .line('    logger.error({ message: "Stream error", err: error });')
+    .line('    console.error("Stream error", error);')
     .line("    if (!res.headersSent) {")
     .line('      res.status(500).json({ error: "Stream failed" });')
     .line("    }")
@@ -254,5 +249,5 @@ export function generateStreamUtils(): string {
     .comment("  await streamArray(res, users, 50);")
     .comment("}");
 
-  return builder.toString();
+  return builder.build();
 }

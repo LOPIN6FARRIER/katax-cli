@@ -12,8 +12,6 @@ export function generateAuthUtils(): string {
     .comment("Authentication Utilities")
     .comment("Password hashing, JWT tokens, and crypto helpers")
     .line()
-    .import(["logger"], "./logger.utils.js")
-    .line()
     .section("Password Hashing (bcrypt)")
     .line()
     .comment("Hash password with bcrypt (recommended for most use cases)")
@@ -156,9 +154,7 @@ export function generateAuthUtils(): string {
       '      throw new Error("jsonwebtoken not installed. Run: npm install jsonwebtoken");',
     )
     .line("    }")
-    .line(
-      '    logger.warn({ message: "JWT verification failed", err: error });',
-    )
+    .line('    console.warn("JWT verification failed", error);')
     .line("    return null;")
     .line("  }")
     .line("}")
@@ -303,5 +299,5 @@ export function generateAuthUtils(): string {
     .comment('  return res.status(401).json({ error: "Invalid token" });')
     .comment("}");
 
-  return builder.toString();
+  return builder.build();
 }
