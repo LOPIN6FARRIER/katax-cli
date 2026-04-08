@@ -20,7 +20,6 @@ export function generateAuthUtils(): string {
       "export async function hashPassword(password: string, saltRounds: number = 12): Promise<string> {",
     )
     .line("  try {")
-    .line("    // @ts-expect-error - bcrypt is an optional peer dependency")
     .line('    const bcrypt = await import("bcrypt");')
     .line("    return await bcrypt.hash(password, saltRounds);")
     .line("  } catch (error) {")
@@ -38,7 +37,6 @@ export function generateAuthUtils(): string {
       "export async function verifyPassword(password: string, hash: string): Promise<boolean> {",
     )
     .line("  try {")
-    .line("    // @ts-expect-error - bcrypt is an optional peer dependency")
     .line('    const bcrypt = await import("bcrypt");')
     .line("    return await bcrypt.compare(password, hash);")
     .line("  } catch (error) {")
@@ -117,12 +115,9 @@ export function generateAuthUtils(): string {
     .line("  options?: JWTOptions")
     .line("): Promise<string> {")
     .line("  try {")
-    .line(
-      "    // @ts-expect-error - jsonwebtoken is an optional peer dependency",
-    )
     .line('    const jwt = await import("jsonwebtoken");')
     .line("    return jwt.sign(payload, secret, {")
-    .line('      expiresIn: options?.expiresIn || "7d",')
+    .line('      expiresIn: (options?.expiresIn || "7d") as import("jsonwebtoken").SignOptions["expiresIn"],')
     .line("      issuer: options?.issuer,")
     .line("      audience: options?.audience,")
     .line("    });")
@@ -142,9 +137,6 @@ export function generateAuthUtils(): string {
     .line("  secret: string")
     .line("): Promise<T | null> {")
     .line("  try {")
-    .line(
-      "    // @ts-expect-error - jsonwebtoken is an optional peer dependency",
-    )
     .line('    const jwt = await import("jsonwebtoken");')
     .line("    const decoded = jwt.verify(token, secret);")
     .line("    return decoded as T;")
@@ -164,9 +156,6 @@ export function generateAuthUtils(): string {
       "export async function decodeToken<T = JWTPayload>(token: string): Promise<T | null> {",
     )
     .line("  try {")
-    .line(
-      "    // @ts-expect-error - jsonwebtoken is an optional peer dependency",
-    )
     .line('    const jwt = await import("jsonwebtoken");')
     .line("    const decoded = jwt.decode(token);")
     .line("    return decoded as T;")

@@ -18,12 +18,65 @@ type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 interface EndpointOptions {
   methods?: string[];
+  limiter?: boolean;
+}
+
+interface ResourceNaming {
+  segments: string[];
+  basePath: string;
+  lowerName: string;
+  camelName: string;
+  pascalName: string;
+  routePath: string;
+  importPath: string;
+  routerIdentifier: string;
+}
+
+function getSrcRelativePrefix(resource: ResourceNaming): string {
+  return "../".repeat(resource.segments.length + 1);
+}
+
+function getSharedImportPath(resource: ResourceNaming): string {
+  return `${getSrcRelativePrefix(resource)}shared/api.utils.js`;
+}
+
+function getMiddlewareImportPath(resource: ResourceNaming): string {
+  return `${getSrcRelativePrefix(resource)}middleware/rate-limit.middleware.js`;
+}
+
+function resolveResourceNaming(input: string): ResourceNaming {
+  const segments = input
+    .split("/")
+    .map((segment) => segment.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (segments.length === 0) {
+    throw new Error("Endpoint name is required");
+  }
+
+  const lowerName = segments[segments.length - 1] as string;
+  const joinedForCase = segments.join("-");
+  const camelName = toCamelCase(joinedForCase);
+  const pascalName = toPascalCase(joinedForCase);
+  const routerIdentifier = `${camelName}Router`;
+
+  return {
+    segments,
+    basePath: path.join(process.cwd(), "src", "api", ...segments),
+    lowerName,
+    camelName,
+    pascalName,
+    routePath: segments.join("/"),
+    importPath: `./${segments.join("/")}/${lowerName}.routes.js`,
+    routerIdentifier,
+  };
 }
 
 export async function addEndpointCommand(
   name: string,
   options: EndpointOptions = {},
 ) {
+  const resource = resolveResourceNaming(name);
   title(`🎯 Add Endpoint: ${name}`);
 
   // Check if we're in a Katax project
@@ -100,6 +153,30 @@ export async function addEndpointCommand(
     selectedMethods = methods;
   }
 
+  const { addLimiter } = await inquirer.prompt([
+    {
+      type: "confirm",
+      name: "addLimiter",
+      message: "Add rate limiter to generated routes?",
+      default: options.limiter ?? false,
+    },
+  ]);
+
+  if (addLimiter) {
+    const hasRateLimit =
+      packageJson.dependencies?.["express-rate-limit"] ||
+      packageJson.devDependencies?.["express-rate-limit"];
+
+    if (!hasRateLimit) {
+      const spinner = ora("Installing express-rate-limit...").start();
+      const { execa } = await import("execa");
+      await execa("npm", ["install", "express-rate-limit"], {
+        cwd: process.cwd(),
+      });
+      spinner.succeed("express-rate-limit installed");
+    }
+  }
+
   // Collect fields for POST/PUT/PATCH
   let fields: FieldConfig[] = [];
   const needsBody = selectedMethods.some((m) =>
@@ -169,29 +246,29 @@ export async function addEndpointCommand(
   const spinner = ora("Generating endpoint files...").start();
 
   try {
-    await generateEndpointFiles(name, selectedMethods, fields);
+    await generateEndpointFiles(resource, selectedMethods, fields, addLimiter);
     spinner.succeed("Endpoint files generated");
 
     success(`\n✨ Endpoint "${name}" created successfully!\n`);
 
     info("Generated files:");
-    gray(`  src/api/${name.toLowerCase()}/${name.toLowerCase()}.validator.ts`);
-    gray(`  src/api/${name.toLowerCase()}/${name.toLowerCase()}.controller.ts`);
-    gray(`  src/api/${name.toLowerCase()}/${name.toLowerCase()}.handler.ts`);
-    gray(`  src/api/${name.toLowerCase()}/${name.toLowerCase()}.routes.ts`);
+    gray(`  src/api/${resource.routePath}/${resource.lowerName}.validator.ts`);
+    gray(`  src/api/${resource.routePath}/${resource.lowerName}.controller.ts`);
+    gray(`  src/api/${resource.routePath}/${resource.lowerName}.handler.ts`);
+    gray(`  src/api/${resource.routePath}/${resource.lowerName}.routes.ts`);
     gray(`  Updated: src/api/routes.ts\n`);
 
     info("Generated endpoints:");
     selectedMethods.forEach((method) => {
       if (method === "GET") {
-        gray(`  GET    /api/${name.toLowerCase()}     - List all`);
-        gray(`  GET    /api/${name.toLowerCase()}/:id - Get by ID`);
+        gray(`  GET    /api/${resource.routePath}     - List all`);
+        gray(`  GET    /api/${resource.routePath}/:id - Get by ID`);
       } else if (method === "POST") {
-        gray(`  POST   /api/${name.toLowerCase()}     - Create`);
+        gray(`  POST   /api/${resource.routePath}     - Create`);
       } else if (method === "PUT" || method === "PATCH") {
-        gray(`  ${method.padEnd(6)} /api/${name.toLowerCase()}/:id - Update`);
+        gray(`  ${method.padEnd(6)} /api/${resource.routePath}/:id - Update`);
       } else if (method === "DELETE") {
-        gray(`  DELETE /api/${name.toLowerCase()}/:id - Delete`);
+        gray(`  DELETE /api/${resource.routePath}/:id - Delete`);
       }
     });
     console.log();
@@ -206,40 +283,60 @@ export async function addEndpointCommand(
 }
 
 async function generateEndpointFiles(
-  name: string,
+  resource: ResourceNaming,
   methods: HttpMethod[],
   fields: FieldConfig[],
+  addLimiter: boolean,
 ): Promise<void> {
-  const basePath = path.join(process.cwd(), "src", "api", name.toLowerCase());
+  const basePath = resource.basePath;
   await ensureDir(basePath);
 
-  const pascalName = toPascalCase(name);
-  const camelName = toCamelCase(name);
-  const lowerName = name.toLowerCase();
+  const pascalName = resource.pascalName;
+  const camelName = resource.camelName;
+  const lowerName = resource.lowerName;
 
   // Generate all files
   await writeFile(
     path.join(basePath, `${lowerName}.validator.ts`),
-    generateValidator(pascalName, camelName, methods, fields),
+    generateValidator(pascalName, camelName, methods, fields, resource),
   );
 
   await writeFile(
     path.join(basePath, `${lowerName}.controller.ts`),
-    generateController(pascalName, camelName, methods, fields),
+    generateController(
+      pascalName,
+      camelName,
+      lowerName,
+      methods,
+      fields,
+      resource,
+    ),
   );
 
   await writeFile(
     path.join(basePath, `${lowerName}.handler.ts`),
-    generateHandler(pascalName, camelName, lowerName, methods),
+    generateHandler(pascalName, camelName, lowerName, methods, resource),
   );
 
   await writeFile(
     path.join(basePath, `${lowerName}.routes.ts`),
-    generateRoutes(pascalName, camelName, lowerName, methods),
+    generateRoutes(
+      pascalName,
+      camelName,
+      lowerName,
+      resource.routePath,
+      methods,
+      addLimiter,
+      resource,
+    ),
   );
 
+  if (addLimiter) {
+    await ensureRateLimitMiddlewareFile();
+  }
+
   // Update main router
-  await updateMainRouter(name);
+  await updateMainRouter(resource);
 }
 
 function generateValidator(
@@ -247,10 +344,11 @@ function generateValidator(
   camelName: string,
   methods: HttpMethod[],
   fields: FieldConfig[],
+  resource: ResourceNaming,
 ): string {
   const lines: string[] = [
     "import { k, kataxInfer } from 'katax-core';",
-    "import { validateSchema, ValidationResult } from '../../shared/api.utils.js';",
+    `import { validateSchema, ValidationResult } from '${getSharedImportPath(resource)}';`,
     "",
     "// ==================== SCHEMAS ====================",
     "",
@@ -382,11 +480,13 @@ function generateValidator(
 function generateController(
   pascalName: string,
   camelName: string,
+  lowerName: string,
   methods: HttpMethod[],
   fields: FieldConfig[],
+  resource: ResourceNaming,
 ): string {
   const lines: string[] = [
-    "import { ControllerResult, createSuccessResult, createErrorResult } from '../../shared/api.utils.js';",
+    `import { ControllerResult, createResponse } from '${getSharedImportPath(resource)}';`,
   ];
 
   // Import types
@@ -405,7 +505,7 @@ function generateController(
 
   if (types.length > 0) {
     lines.push(
-      `import { ${types.join(", ")} } from './${camelName}.validator.js';`,
+      `import { ${types.join(", ")} } from './${lowerName}.validator.js';`,
     );
   }
 
@@ -429,9 +529,9 @@ function generateController(
       `      { id: '2', ${fields.length > 0 ? `${fields[0].name}: 'Sample 2',` : ""} createdAt: new Date().toISOString() }`,
       "    ];",
       "",
-      `    return createSuccessResult('${pascalName}s retrieved', mock${pascalName}s);`,
+      `    return createResponse.success('${pascalName}s retrieved', mock${pascalName}s);`,
       "  } catch (error) {",
-      `    return createErrorResult('Failed to list ${camelName}s', error instanceof Error ? error.message : 'Unknown error', 500);`,
+      `    return createResponse.error('Failed to list ${camelName}s', error instanceof Error ? error.message : 'Unknown error', 500);`,
       "  }",
       "}",
       "",
@@ -447,9 +547,9 @@ function generateController(
       "    // TODO: Implement database query",
       `    const mock${pascalName} = { id: params.id, ${fields.length > 0 ? `${fields[0].name}: 'Sample',` : ""} createdAt: new Date().toISOString() };`,
       "",
-      `    return createSuccessResult('${pascalName} retrieved', mock${pascalName});`,
+      `    return createResponse.success('${pascalName} retrieved', mock${pascalName});`,
       "  } catch (error) {",
-      `    return createErrorResult('Failed to get ${camelName}', error instanceof Error ? error.message : 'Unknown error', 500);`,
+      `    return createResponse.error('Failed to get ${camelName}', error instanceof Error ? error.message : 'Unknown error', 500);`,
       "  }",
       "}",
       "",
@@ -465,11 +565,11 @@ function generateController(
       `export async function create${pascalName}(data: Create${pascalName}Data): Promise<ControllerResult<any>> {`,
       "  try {",
       "    // TODO: Implement database insertion",
-      `    const new${pascalName} = { id: Math.random().toString(36).substr(2, 9), ...data, createdAt: new Date().toISOString() };`,
+      `    const new${pascalName} = { id: Math.random().toString(36).slice(2, 11), ...data, createdAt: new Date().toISOString() };`,
       "",
-      `    return createSuccessResult('${pascalName} created', new${pascalName}, undefined, 201);`,
+      `    return createResponse.success('${pascalName} created', new${pascalName}, 201);`,
       "  } catch (error) {",
-      `    return createErrorResult('Failed to create ${camelName}', error instanceof Error ? error.message : 'Unknown error', 500);`,
+      `    return createResponse.error('Failed to create ${camelName}', error instanceof Error ? error.message : 'Unknown error', 500);`,
       "  }",
       "}",
       "",
@@ -487,9 +587,9 @@ function generateController(
       "    // TODO: Implement database update",
       `    const updated${pascalName} = { id: params.id, ...data, updatedAt: new Date().toISOString() };`,
       "",
-      `    return createSuccessResult('${pascalName} updated', updated${pascalName});`,
+      `    return createResponse.success('${pascalName} updated', updated${pascalName});`,
       "  } catch (error) {",
-      `    return createErrorResult('Failed to update ${camelName}', error instanceof Error ? error.message : 'Unknown error', 500);`,
+      `    return createResponse.error('Failed to update ${camelName}', error instanceof Error ? error.message : 'Unknown error', 500);`,
       "  }",
       "}",
       "",
@@ -506,9 +606,9 @@ function generateController(
       "  try {",
       "    // TODO: Implement database deletion",
       "",
-      `    return createSuccessResult('${pascalName} deleted');`,
+      `    return createResponse.success('${pascalName} deleted');`,
       "  } catch (error) {",
-      `    return createErrorResult('Failed to delete ${camelName}', error instanceof Error ? error.message : 'Unknown error', 500);`,
+      `    return createResponse.error('Failed to delete ${camelName}', error instanceof Error ? error.message : 'Unknown error', 500);`,
       "  }",
       "}",
       "",
@@ -523,10 +623,11 @@ function generateHandler(
   camelName: string,
   lowerName: string,
   methods: HttpMethod[],
+  resource: ResourceNaming,
 ): string {
   const lines: string[] = [
     "import { Request, Response } from 'express';",
-    "import { sendResponse } from '../../shared/api.utils.js';",
+    `import { sendResponse } from '${getSharedImportPath(resource)}';`,
   ];
 
   // Import controllers
@@ -631,10 +732,11 @@ function generateHandler(
       "  // First validate params",
       `  const paramsResult = await validate${pascalName}Id(req.params);`,
       "  if (!paramsResult.isValid) {",
-      "    res.status(400).json({",
+      "    res.status(422).json({",
       "      success: false,",
-      "      message: 'Invalid params',",
-      "      errors: paramsResult.errors",
+      "      message: 'Validation failed',",
+      "      error: 'VALIDATION_ERROR',",
+      "      details: paramsResult.errors",
       "    });",
       "    return;",
       "  }",
@@ -676,9 +778,18 @@ function generateRoutes(
   pascalName: string,
   camelName: string,
   lowerName: string,
+  routePath: string,
   methods: HttpMethod[],
+  addLimiter: boolean,
+  resource: ResourceNaming,
 ): string {
   const lines: string[] = ["import { Router } from 'express';"];
+
+  if (addLimiter) {
+    lines.push(
+      `import { createEndpointLimiter } from '${getMiddlewareImportPath(resource)}';`,
+    );
+  }
 
   // Import handlers
   const handlerImports: string[] = [];
@@ -698,6 +809,11 @@ function generateRoutes(
   lines.push(
     "",
     "const router = Router();",
+    ...(addLimiter
+      ? [
+          "const endpointLimiter = createEndpointLimiter({ windowMs: 15 * 60 * 1000, max: 60 });",
+        ]
+      : []),
     "",
     "// ==================== ROUTES ====================",
     "",
@@ -707,16 +823,16 @@ function generateRoutes(
   if (methods.includes("GET")) {
     lines.push(
       "/**",
-      ` * @route GET /api/${lowerName}`,
+      ` * @route GET /api/${routePath}`,
       ` * @desc List all ${lowerName}s`,
       " */",
-      `router.get('/', list${pascalName}sHandler);`,
+      `router.get('/', ${addLimiter ? "endpointLimiter, " : ""}list${pascalName}sHandler);`,
       "",
       "/**",
-      ` * @route GET /api/${lowerName}/:id`,
+      ` * @route GET /api/${routePath}/:id`,
       ` * @desc Get ${lowerName} by ID`,
       " */",
-      `router.get('/:id', get${pascalName}Handler);`,
+      `router.get('/:id', ${addLimiter ? "endpointLimiter, " : ""}get${pascalName}Handler);`,
       "",
     );
   }
@@ -725,10 +841,10 @@ function generateRoutes(
   if (methods.includes("POST")) {
     lines.push(
       "/**",
-      ` * @route POST /api/${lowerName}`,
+      ` * @route POST /api/${routePath}`,
       ` * @desc Create new ${lowerName}`,
       " */",
-      `router.post('/', create${pascalName}Handler);`,
+      `router.post('/', ${addLimiter ? "endpointLimiter, " : ""}create${pascalName}Handler);`,
       "",
     );
   }
@@ -737,10 +853,10 @@ function generateRoutes(
   if (methods.includes("PUT")) {
     lines.push(
       "/**",
-      ` * @route PUT /api/${lowerName}/:id`,
+      ` * @route PUT /api/${routePath}/:id`,
       ` * @desc Update ${lowerName}`,
       " */",
-      `router.put('/:id', update${pascalName}Handler);`,
+      `router.put('/:id', ${addLimiter ? "endpointLimiter, " : ""}update${pascalName}Handler);`,
       "",
     );
   }
@@ -749,10 +865,10 @@ function generateRoutes(
   if (methods.includes("PATCH")) {
     lines.push(
       "/**",
-      ` * @route PATCH /api/${lowerName}/:id`,
+      ` * @route PATCH /api/${routePath}/:id`,
       ` * @desc Partial update ${lowerName}`,
       " */",
-      `router.patch('/:id', update${pascalName}Handler);`,
+      `router.patch('/:id', ${addLimiter ? "endpointLimiter, " : ""}update${pascalName}Handler);`,
       "",
     );
   }
@@ -761,10 +877,10 @@ function generateRoutes(
   if (methods.includes("DELETE")) {
     lines.push(
       "/**",
-      ` * @route DELETE /api/${lowerName}/:id`,
+      ` * @route DELETE /api/${routePath}/:id`,
       ` * @desc Delete ${lowerName}`,
       " */",
-      `router.delete('/:id', delete${pascalName}Handler);`,
+      `router.delete('/:id', ${addLimiter ? "endpointLimiter, " : ""}delete${pascalName}Handler);`,
       "",
     );
   }
@@ -774,15 +890,54 @@ function generateRoutes(
   return lines.join("\n");
 }
 
-async function updateMainRouter(name: string): Promise<void> {
+async function ensureRateLimitMiddlewareFile(): Promise<void> {
+  const middlewarePath = path.join(
+    process.cwd(),
+    "src",
+    "middleware",
+    "rate-limit.middleware.ts",
+  );
+
+  if (fileExists(middlewarePath)) {
+    return;
+  }
+
+  const middlewareContent = `import { rateLimit } from 'express-rate-limit';
+
+export interface EndpointLimiterOptions {
+  windowMs?: number;
+  max?: number;
+}
+
+export function createEndpointLimiter(options: EndpointLimiterOptions = {}) {
+  const windowMs = options.windowMs ?? 15 * 60 * 1000;
+  const max = options.max ?? 60;
+
+  return rateLimit({
+    windowMs,
+    max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+      success: false,
+      message: 'Too many requests, please try again later.',
+      error: 'RATE_LIMIT_EXCEEDED'
+    }
+  });
+}
+`;
+
+  await writeFile(middlewarePath, middlewareContent);
+}
+
+async function updateMainRouter(resource: ResourceNaming): Promise<void> {
   const routerPath = path.join(process.cwd(), "src", "api", "routes.ts");
-  const lowerName = name.toLowerCase();
 
   try {
     let content = await fs.readFile(routerPath, "utf-8");
 
     // Add import at the top (after other imports)
-    const importLine = `import ${lowerName}Router from './${lowerName}/${lowerName}.routes.js';`;
+    const importLine = `import ${resource.routerIdentifier} from '${resource.importPath}';`;
     if (!content.includes(importLine)) {
       // Find last import line
       const importRegex = /^import\s+.+from\s+.+;$/gm;
@@ -803,7 +958,7 @@ async function updateMainRouter(name: string): Promise<void> {
     }
 
     // Add router.use() before export
-    const useLine = `router.use('/${lowerName}', ${lowerName}Router);`;
+    const useLine = `router.use('/${resource.routePath}', ${resource.routerIdentifier});`;
     if (!content.includes(useLine)) {
       const exportIndex = content.indexOf("export default router");
       if (exportIndex !== -1) {
@@ -820,3 +975,13 @@ async function updateMainRouter(name: string): Promise<void> {
     // Router file might not exist, which is fine
   }
 }
+
+export const __endpointTestUtils = {
+  resolveResourceNaming,
+  generateValidator,
+  generateController,
+  generateHandler,
+  generateRoutes,
+  getSharedImportPath,
+  getMiddlewareImportPath,
+};

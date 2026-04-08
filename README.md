@@ -117,6 +117,9 @@ Initialize a new Express API project.
 
 **Options:**
 - `-f, --force` - Overwrite existing directory
+- `--pm <manager>` - Choose package manager (`pnpm` default, `npm` optional)
+- `--ignore-scripts` - Install with lifecycle scripts disabled
+- `--write-npmrc` - Write `.npmrc` with `ignore-scripts=true`
 
 **Example:**
 ```bash
@@ -146,6 +149,15 @@ Generate a complete CRUD resource.
 **Example:**
 ```bash
 katax generate crud products
+```
+
+### `katax generate repository <name>`
+
+Generate a repository scaffold wired to `katax-service-manager` typed database access.
+
+**Example:**
+```bash
+katax generate repository products
 ```
 
 ### `katax info`
@@ -357,7 +369,13 @@ Initialize a new Express API project.
 
 **Options:**
 - `-f, --force` - Overwrite existing directory
-katax init my-awesome-api
+- `--pm <manager>` - Choose package manager (`pnpm` default, `npm` optional)
+- `--ignore-scripts` - Install with lifecycle scripts disabled
+- `--write-npmrc` - Write `.npmrc` with `ignore-scripts=true`
+
+**Example:**
+```bash
+katax init my-awesome-api --pm pnpm --ignore-scripts --write-npmrc
 ```
 
 ### `katax add endpoint <name>`
@@ -382,6 +400,15 @@ Generate a complete CRUD resource.
 **Example:**
 ```bash
 katax generate crud products
+```
+
+### `katax generate repository <name>`
+
+Generate a repository scaffold wired to `katax-service-manager` typed database access.
+
+**Example:**
+```bash
+katax generate repository products
 ```
 
 ### `katax info`

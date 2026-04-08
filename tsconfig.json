@@ -6,7 +6,7 @@
     "lib": ["ES2022"],
     
     // Use Node.js module resolution for VPS deployment
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     
     // ES Module support
     "esModuleInterop": true,

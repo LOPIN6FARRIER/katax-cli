@@ -18,6 +18,10 @@ export interface ProjectConfig {
   useRegistry?: boolean;
   registryMode?: "none" | "url" | "handler";
   registryUrl?: string;
+  peerDependenciesMode?: "none" | "selected" | "all";
+  packageManager?: "npm" | "pnpm";
+  ignoreInstallScripts?: boolean;
+  createNpmrcForIgnoreScripts?: boolean;
   useLifecycleHooks?: boolean;
   initGit?: boolean;
   redisConfig?: {

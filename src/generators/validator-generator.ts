@@ -7,6 +7,7 @@ export function generateValidator(config: EndpointConfig): string {
   const camelName = toCamelCase(name);
 
   let content = `import { k, kataxInfer } from 'katax-core';\n`;
+  content += `import { validateSchema } from '../../shared/api.utils.js';\n`;
   content += `import type { ValidationResult } from '../../shared/api.utils.js';\n`;
 
   if (addAsyncValidators) {
@@ -140,42 +141,14 @@ export function generateValidator(config: EndpointConfig): string {
   // Generate validation functions (ValidationResult is imported from api.utils)
   content += `/**\n * Validate ${name} data\n */\n`;
   content += `export async function validate${pascalName}(data: unknown): Promise<ValidationResult<${pascalName}Data>> {\n`;
-  content += `  const result = ${addAsyncValidators ? 'await ' : ''}${camelName}Schema.safeParse${addAsyncValidators ? 'Async' : ''}(data);\n\n`;
-  content += `  if (!result.success) {\n`;
-  content += `    const errors = result.issues.map(issue => ({\n`;
-  content += `      field: issue.path.join('.'),\n`;
-  content += `      message: issue.message\n`;
-  content += `    }));\n\n`;
-  content += `    return {\n`;
-  content += `      isValid: false,\n`;
-  content += `      errors\n`;
-  content += `    };\n`;
-  content += `  }\n\n`;
-  content += `  return {\n`;
-  content += `    isValid: true,\n`;
-  content += `    data: result.data\n`;
-  content += `  };\n`;
+  content += `  return validateSchema(${camelName}Schema, data);\n`;
   content += `}\n`;
 
   // Generate ID validation function for GET/DELETE
   if (config.method === 'GET' || config.method === 'DELETE' || config.method === 'PUT' || config.method === 'PATCH') {
     content += `\n/**\n * Validate ${name} ID\n */\n`;
     content += `export async function validate${pascalName}Id(id: string): Promise<ValidationResult<${pascalName}IdType>> {\n`;
-    content += `  const result = ${camelName}IdSchema.safeParse(id);\n\n`;
-    content += `  if (!result.success) {\n`;
-    content += `    const errors = result.issues.map(issue => ({\n`;
-    content += `      field: issue.path.join('.') || 'id',\n`;
-    content += `      message: issue.message\n`;
-    content += `    }));\n\n`;
-    content += `    return {\n`;
-    content += `      isValid: false,\n`;
-    content += `      errors\n`;
-    content += `    };\n`;
-    content += `  }\n\n`;
-    content += `  return {\n`;
-    content += `    isValid: true,\n`;
-    content += `    data: result.data\n`;
-    content += `  };\n`;
+    content += `  return validateSchema(${camelName}IdSchema, id);\n`;
     content += `}\n`;
   }
 

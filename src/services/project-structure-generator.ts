@@ -366,8 +366,8 @@ export class ProjectStructureGenerator {
         module: "ESNext",
         lib: ["ES2022"],
 
-        // Use Node.js module resolution for VPS deployment
-        moduleResolution: "node",
+        // bundler: compatible with ESNext module, no deprecated node10 warning
+        moduleResolution: "bundler",
 
         // ES Module support (no require, pure import/export)
         esModuleInterop: true,

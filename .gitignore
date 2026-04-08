@@ -6,3 +6,4 @@ dist/
 coverage/
 .vscode/
 package-lock.json
+.tmp-e2e

@@ -15,6 +15,7 @@ import { dirname, join } from "path";
 import { initCommand } from "./commands/init.js";
 import { addEndpointCommand } from "./commands/add-endpoint.js";
 import { generateCrudCommand } from "./commands/generate-crud.js";
+import { generateRepositoryCommand } from "./commands/generate-repository.js";
 import { generateDocsCommand } from "./commands/generate-docs.js";
 import { infoCommand } from "./commands/info.js";
 import {
@@ -55,6 +56,9 @@ program
   .command("init [project-name]")
   .description("Initialize a new Express API project with TypeScript")
   .option("-f, --force", "Overwrite existing project")
+  .option("--pm <manager>", "Package manager to use (npm|pnpm)")
+  .option("--ignore-scripts", "Install dependencies with --ignore-scripts")
+  .option("--write-npmrc", "Write .npmrc with ignore-scripts=true")
   .action(initCommand);
 
 // Add command - Add resources to project
@@ -86,12 +90,20 @@ generateCommand
   .action(generateCrudCommand);
 
 generateCommand
+  .command("repository <name>")
+  .description("Generate a repository scaffold")
+  .action(generateRepositoryCommand);
+
+generateCommand
   .command("docs")
   .description("Generate API documentation (Swagger/OpenAPI)")
   .option("-f, --force", "Force regenerate (overwrite existing)")
   .option("-o, --output <path>", "Output path for OpenAPI spec")
   .option("-p, --port <port>", "Server port for documentation URL")
-  .option("-u, --url <url>", "Production server URL (e.g., https://api.example.com)")
+  .option(
+    "-u, --url <url>",
+    "Production server URL (e.g., https://api.example.com)",
+  )
   .action(generateDocsCommand);
 
 // Deploy command - PM2 deployment on Ubuntu VPS
@@ -199,6 +211,9 @@ ${chalk.bold("Examples:")}
 
   ${chalk.gray("# Generate a complete CRUD resource")}
   $ katax generate crud products
+
+  ${chalk.gray("# Generate a repository scaffold")}
+  $ katax generate repository products
 
   ${chalk.gray("# Generate API documentation")}
   $ katax generate docs
