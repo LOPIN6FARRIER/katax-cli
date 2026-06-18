@@ -14,6 +14,18 @@ npm install -g katax-cli
 npx katax-cli init my-api
 ```
 
+### AI Agent Skill
+
+Install the [katax-cli AI agent skill](https://skills.sh/LOPIN6FARRIER/katax-cli) for enhanced IDE assistance:
+
+[![skills.sh](https://skills.sh/b/LOPIN6FARRIER/katax-cli)](https://skills.sh/LOPIN6FARRIER/katax-cli)
+
+```bash
+npx skills add LOPIN6FARRIER/katax-cli
+```
+
+Compatible with Claude Code, Cursor, Windsurf, GitHub Copilot, and other AI coding agents.
+
 ## Quick Start
 
 ```bash
