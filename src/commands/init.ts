@@ -1480,8 +1480,14 @@ export function errorMiddleware(
       ? "katax.logger.error"
       : "logger.error";
 
-    const apiUtilsContent = `import { Request, Response } from 'express';
+    const apiUtilsContent = `import { Request, Response, CookieOptions } from 'express';
 ${apiUtilsLoggerImport}
+
+export interface ResponseCookie {
+  name: string;
+  value: string;
+  options?: CookieOptions;
+}
 
 export interface ControllerResult<T = any> {
   success: boolean;
@@ -1495,6 +1501,7 @@ export interface ControllerResult<T = any> {
   totalItems?: number;
   totalCount?: number;
   hasMorePages?: boolean;
+  cookies?: ResponseCookie[];
 }
 
 type PaginationMeta = Pick<
@@ -1507,13 +1514,15 @@ export const createResponse = {
     message: string,
     data?: T,
     statusCode = 200,
-    pagination?: PaginationMeta
+    pagination?: PaginationMeta,
+    cookies?: ResponseCookie[]
   ): ControllerResult<T> {
     return {
       success: true,
       message,
       statusCode,
       ...(pagination ?? {}),
+      ...(cookies && cookies.length > 0 ? { cookies } : {}),
       data
     };
   },
@@ -1629,6 +1638,18 @@ export interface ValidationResult<T = unknown> {
   errors?: ValidationError[];
 }
 
+export interface SendResponseOptions<
+  TValidation = unknown,
+  TResponse = unknown,
+> {
+  onSuccess?: (params: {
+    req: Request;
+    res: Response;
+    validData: TValidation;
+    controllerResult: ControllerResult<TResponse>;
+  }) => void | Promise<void>;
+}
+
 type KataxIssue = {
   path: (string | number)[];
   message: string;
@@ -1708,7 +1729,8 @@ export async function sendResponse<TValidation = unknown, TResponse = unknown>(
   req: Request,
   res: Response,
   validator: () => Promise<ValidationResult<TValidation>>,
-  controller: (validData: TValidation) => Promise<ControllerResult<TResponse>>
+  controller: (validData: TValidation) => Promise<ControllerResult<TResponse>>,
+  options?: SendResponseOptions<TValidation, TResponse>
 ): Promise<void> {
   try {
     // 1. Execute validation
@@ -1734,6 +1756,26 @@ export async function sendResponse<TValidation = unknown, TResponse = unknown>(
     // 2. Execute controller if validation passes
     const controllerResult = await controller(validationResult.data as TValidation);
 
+    // 2a. Apply cookies from controller result
+    if (controllerResult.cookies && controllerResult.cookies.length > 0) {
+      for (const cookie of controllerResult.cookies) {
+        if (cookie.options) {
+          res.cookie(cookie.name, cookie.value, cookie.options);
+        } else {
+          res.cookie(cookie.name, cookie.value);
+        }
+      }
+    }
+
+    if (controllerResult.success && options?.onSuccess) {
+      await options.onSuccess({
+        req,
+        res,
+        validData: validationResult.data as TValidation,
+        controllerResult,
+      });
+    }
+
     // 3. Build HTTP response
     const statusCode = controllerResult.statusCode || (controllerResult.success ? 200 : 400);
 
@@ -1742,6 +1784,7 @@ export async function sendResponse<TValidation = unknown, TResponse = unknown>(
       message: string;
       error?: string;
       totalItems?: number;
+      totalCount?: number;
       currentPage?: number;
       totalPages?: number;
       hasMorePages?: boolean;
@@ -1759,6 +1802,10 @@ export async function sendResponse<TValidation = unknown, TResponse = unknown>(
 
     if (controllerResult.totalItems !== undefined) {
       response.totalItems = controllerResult.totalItems;
+    }
+
+    if (controllerResult.totalCount !== undefined) {
+      response.totalCount = controllerResult.totalCount;
     }
 
     if (controllerResult.currentPage !== undefined) {
@@ -1796,9 +1843,28 @@ export async function sendResponse<TValidation = unknown, TResponse = unknown>(
       )
     });
   }
+  }
+}
+
+// ==================== COOKIE HELPERS ====================
+
+export function setCookie(
+  res: Response,
+  name: string,
+  value: string,
+  options?: CookieOptions
+): void {
+  res.cookie(name, value, options);
+}
+
+export function clearCookie(
+  res: Response,
+  name: string,
+  options?: CookieOptions
+): void {
+  res.clearCookie(name, options);
 }
 `;
-
     await writeFile(
       path.join(projectPath, "src/shared/api.utils.ts"),
       apiUtilsContent,
@@ -2115,6 +2181,103 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
     loggerMiddlewareContent,
   );
 
+  // Create API key authentication middleware
+  const apiKeyMiddlewareLoggerImport = config.useKataxServiceManager
+    ? `import { katax } from '${kataxImportSourceShared}';`
+    : "import { logger } from '../shared/logger.utils.js';";
+  const apiKeyMiddlewareContent = `${apiKeyMiddlewareLoggerImport}
+import { Request, Response, NextFunction } from 'express';
+
+export interface ApiKeyPayload {
+  userId: string;
+  keyId: string;
+  scopes: string[];
+}
+
+/**
+ * Extract API key from request headers
+ * Checks x-api-key header and Authorization: ApiKey <key> scheme
+ */
+export function getApiKeyFromRequest(req: Request): string | undefined {
+  const headerKey = req.headers['x-api-key'];
+  if (headerKey) {
+    return Array.isArray(headerKey) ? headerKey[0].trim() : headerKey.trim();
+  }
+
+  const auth = req.headers.authorization;
+  if (auth && typeof auth === 'string' && auth.startsWith('ApiKey ')) {
+    return auth.substring('ApiKey '.length).trim();
+  }
+
+  return undefined;
+}
+
+/**
+ * Middleware to authenticate requests using API keys
+ * Requires a resolveApiKey function that returns the API key payload or null
+ */
+export function authenticateApiKey(
+  resolveApiKey: (key: string) => Promise<ApiKeyPayload | null>,
+) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const apiKey = getApiKeyFromRequest(req);
+      if (!apiKey) {
+        res.status(401).json({
+          success: false,
+          message: 'API key is required',
+          error: 'MISSING_API_KEY',
+        });
+        return;
+      }
+
+      const payload = await resolveApiKey(apiKey);
+      if (!payload) {
+        res.status(401).json({
+          success: false,
+          message: 'Invalid API key',
+          error: 'INVALID_API_KEY',
+        });
+        return;
+      }
+
+      (req as any).apiKey = payload;
+      (req as any).authType = 'api_key';
+      next();
+    } catch (error) {
+      ${config.useKataxServiceManager ? "katax.logger" : "logger"}.error({
+        err: error,
+        message: 'API key authentication error',
+      });
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error during authentication',
+      });
+    }
+  };
+}
+
+/**
+ * Check if request can bypass rate limiting
+ * Returns true for API key authenticated requests or in development
+ */
+export function hasRateLimitBypass(req: Request): boolean {
+  if (process.env.NODE_ENV === 'development') return true;
+  if ((req as any).authType === 'api_key') return true;
+  return false;
+}
+
+export const apiKeyHelpers = {
+  getApiKeyFromRequest,
+  authenticateApiKey,
+  hasRateLimitBypass,
+};
+`;
+  await writeFile(
+    path.join(projectPath, "src/middleware/api-key.middleware.ts"),
+    apiKeyMiddlewareContent,
+  );
+
   // Create CORS configuration
   const corsConfigContent = `import { CorsOptions } from 'cors';
 
@@ -2184,6 +2347,7 @@ ${config.database !== "none" ? `  // Database variables\n  required.DATABASE_URL
   if (missing.length > 0) {
     ${envErrorLogger}({message:\`Missing required environment variables: \${missing.join(', ')}\`});
     ${envErrorLogger}({message:'Please check your .env file'});
+    throw new Error(\`Missing required environment variables: \${missing.join(', ')}\`);
   }
 
   ${envInfoLogger}({message:'Environment variables validated successfully'});
