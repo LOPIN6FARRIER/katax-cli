@@ -1843,7 +1843,6 @@ export async function sendResponse<TValidation = unknown, TResponse = unknown>(
       )
     });
   }
-  }
 }
 
 // ==================== COOKIE HELPERS ====================
@@ -1854,7 +1853,11 @@ export function setCookie(
   value: string,
   options?: CookieOptions
 ): void {
-  res.cookie(name, value, options);
+  if (options) {
+    res.cookie(name, value, options);
+  } else {
+    res.cookie(name, value);
+  }
 }
 
 export function clearCookie(
@@ -1862,7 +1865,11 @@ export function clearCookie(
   name: string,
   options?: CookieOptions
 ): void {
-  res.clearCookie(name, options);
+  if (options) {
+    res.clearCookie(name, options);
+  } else {
+    res.clearCookie(name);
+  }
 }
 `;
     await writeFile(

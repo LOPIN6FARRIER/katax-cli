@@ -350,7 +350,11 @@ export function generateResponseUtils(): string {
     .line('  value: string,')
     .line('  options?: CookieOptions')
     .line('): void {')
-    .line('  res.cookie(name, value, options);')
+    .line('  if (options) {')
+    .line('    res.cookie(name, value, options);')
+    .line('  } else {')
+    .line('    res.cookie(name, value);')
+    .line('  }')
     .line('}')
     .line()
     .line('export function clearCookie(')
@@ -358,7 +362,11 @@ export function generateResponseUtils(): string {
     .line('  name: string,')
     .line('  options?: CookieOptions')
     .line('): void {')
-    .line('  res.clearCookie(name, options);')
+    .line('  if (options) {')
+    .line('    res.clearCookie(name, options);')
+    .line('  } else {')
+    .line('    res.clearCookie(name);')
+    .line('  }')
     .line('}');
 
   return builder.build();
