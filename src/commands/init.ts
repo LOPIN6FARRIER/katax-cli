@@ -11,6 +11,7 @@ import {
   writeFile,
   copyTemplate,
 } from "../utils/file-utils.js";
+import { checkForUpdates, printUpdateNotices, cliVersion } from "../utils/version-check.js";
 import { ProjectConfig } from "../types/index.js";
 import { generateSwaggerSetup } from "../templates/generators/swagger-template.js";
 import { generateStreamUtils } from "../templates/generators/stream-utils-template.js";
@@ -31,7 +32,7 @@ type PackageManager = "npm" | "pnpm";
 // broke previously-working generated projects with no compile-time signal
 // from this CLI. Bump these deliberately when verifying compatibility with a
 // new katax-core/katax-service-manager release.
-const KATAX_CORE_VERSION = "^1.6.3";
+const KATAX_CORE_VERSION = "^1.6.5";
 const KATAX_SERVICE_MANAGER_VERSION = "^0.5.8";
 
 const KATAX_SERVICE_MANAGER_PEERS = [
@@ -588,10 +589,39 @@ export async function initCommand(
       );
       gray(`  Swagger UI is pre-configured and ready to use!\n`);
     }
+
+    await checkAndNotifyUpdates(config);
   } catch (err) {
     spinner.fail("Failed to create project");
     error(err instanceof Error ? err.message : "Unknown error");
     process.exit(1);
+  }
+}
+
+/**
+ * Non-blocking, cached (~1 day) check for newer katax-core/katax-service-manager/
+ * katax-cli releases than the ones this run just pinned/is running. Never
+ * throws - a failed registry lookup just means nothing is printed.
+ */
+async function checkAndNotifyUpdates(config: ProjectConfig): Promise<void> {
+  try {
+    const toCheck: Array<{ name: string; current: string }> = [
+      { name: "katax-cli", current: cliVersion() },
+    ];
+    if (config.validation === "katax-core") {
+      toCheck.push({ name: "katax-core", current: KATAX_CORE_VERSION });
+    }
+    if (config.useKataxServiceManager) {
+      toCheck.push({
+        name: "katax-service-manager",
+        current: KATAX_SERVICE_MANAGER_VERSION,
+      });
+    }
+
+    const results = await checkForUpdates(toCheck);
+    printUpdateNotices(results);
+  } catch {
+    // A version check must never fail project creation.
   }
 }
 
@@ -875,7 +905,10 @@ async function createProjectStructure(
       ...(config.validation === "katax-core" && { "katax-core": KATAX_CORE_VERSION }),
       ...(config.authentication === "jwt" && {
         jsonwebtoken: "^9.0.2",
-        bcrypt: "^5.1.1",
+        // bcryptjs instead of bcrypt: pure JS, no native build step (node-gyp),
+        // which is a common source of broken installs on Windows/CI images that
+        // lack build tools. Same hash/compare API.
+        bcryptjs: "^2.4.3",
       }),
       ...(config.swagger && { "swagger-ui-express": "^5.0.0" }),
       ...(config.database === "postgresql" && { pg: "^8.11.3" }),
@@ -890,7 +923,7 @@ async function createProjectStructure(
       "@types/node": "^22.10.5",
       ...(config.authentication === "jwt" && {
         "@types/jsonwebtoken": "^9.0.5",
-        "@types/bcrypt": "^5.0.2",
+        // bcryptjs ships its own type declarations - no @types/bcryptjs needed.
       }),
       ...(config.swagger && { "@types/swagger-ui-express": "^4.1.6" }),
       ...(config.database === "postgresql" && { "@types/pg": "^8.10.9" }),
@@ -1505,6 +1538,8 @@ export function errorMiddleware(
       : "logger.error";
 
     const apiUtilsContent = `import { Request, Response, CookieOptions } from 'express';
+import type { Schema } from 'katax-core';
+import { validateSchema as coreValidateSchema } from 'katax-core';
 ${apiUtilsLoggerImport}
 
 export interface ResponseCookie {
@@ -1674,50 +1709,27 @@ export interface SendResponseOptions<
   }) => void | Promise<void>;
 }
 
-type KataxIssue = {
-  path: (string | number)[];
-  message: string;
-};
-
-type KataxSafeParseResult<T> =
-  | { success: true; data: T }
-  | { success: false; issues: KataxIssue[] };
-
-export interface KataxSchema<T = unknown> {
-  safeParse(input: unknown): KataxSafeParseResult<T>;
-  safeParseAsync(input: unknown): Promise<KataxSafeParseResult<T>>;
-  hasAsyncValidation?: () => boolean;
-  _asyncValidators?: unknown[];
-}
-
 /**
- * Función genérica reutilizable para validar datos con schemas de katax-core
- * Soporta validación síncrona y asíncrona automáticamente
- * 
+ * Valida datos contra un schema de katax-core y adapta el resultado al
+ * shape ValidationResult usado por este proyecto.
+ *
+ * El dispatch síncrono/asíncrono (safeParse vs safeParseAsync según si el
+ * schema tiene validadores async) lo resuelve katax-core internamente -
+ * ver BaseSchema.hasAsyncValidation() - así que no hace falta reimplementarlo
+ * aquí ni duck-tipear _asyncValidators.
+ *
  * @param schema - Schema de katax-core (cualquier tipo: k.object, k.string, etc.)
  * @param data - Datos a validar
  * @returns ValidationResult con datos validados o errores
  */
 export async function validateSchema<T>(
-  schema: KataxSchema<T>,
+  schema: Schema<T>,
   data: unknown
 ): Promise<ValidationResult<T>> {
-  // Detectar si el schema tiene validadores asíncronos
-  const hasAsyncValidators =
-    typeof schema.hasAsyncValidation === 'function'
-      ? schema.hasAsyncValidation()
-      : !!(schema._asyncValidators && schema._asyncValidators.length > 0);
-
-  let result: KataxSafeParseResult<T>;
+  let result;
 
   try {
-    if (hasAsyncValidators) {
-      // Usar safeParseAsync para schemas con validadores asíncronos
-      result = await schema.safeParseAsync(data);
-    } else {
-      // Usar safeParse para schemas síncronos
-      result = schema.safeParse(data);
-    }
+    result = await coreValidateSchema(schema, data);
   } catch (error) {
     // Error inesperado durante la validación
     return {

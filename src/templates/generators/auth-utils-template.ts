@@ -1,6 +1,6 @@
 /**
  * Authentication utilities template generator
- * Password hashing (bcrypt/argon2), JWT tokens, crypto utilities
+ * Password hashing (bcryptjs/argon2), JWT tokens, crypto utilities
  */
 
 import { CodeBuilder } from "../base/code-builder.js";
@@ -12,37 +12,37 @@ export function generateAuthUtils(): string {
     .comment("Authentication Utilities")
     .comment("Password hashing, JWT tokens, and crypto helpers")
     .line()
-    .section("Password Hashing (bcrypt)")
+    .section("Password Hashing (bcryptjs)")
     .line()
-    .comment("Hash password with bcrypt (recommended for most use cases)")
-    .comment("Install: npm install bcrypt @types/bcrypt")
+    .comment("Hash password with bcryptjs (pure JS, no native build step - recommended for most use cases)")
+    .comment("Install: npm install bcryptjs")
     .line(
       "export async function hashPassword(password: string, saltRounds: number = 12): Promise<string> {",
     )
     .line("  try {")
-    .line('    const bcrypt = await import("bcrypt");')
+    .line('    const bcrypt = await import("bcryptjs");')
     .line("    return await bcrypt.hash(password, saltRounds);")
     .line("  } catch (error) {")
     .line('    if ((error as any).code === "ERR_MODULE_NOT_FOUND") {')
     .line(
-      '      throw new Error("bcrypt not installed. Run: npm install bcrypt");',
+      '      throw new Error("bcryptjs not installed. Run: npm install bcryptjs");',
     )
     .line("    }")
     .line("    throw error;")
     .line("  }")
     .line("}")
     .line()
-    .comment("Verify password against bcrypt hash")
+    .comment("Verify password against bcryptjs hash")
     .line(
       "export async function verifyPassword(password: string, hash: string): Promise<boolean> {",
     )
     .line("  try {")
-    .line('    const bcrypt = await import("bcrypt");')
+    .line('    const bcrypt = await import("bcryptjs");')
     .line("    return await bcrypt.compare(password, hash);")
     .line("  } catch (error) {")
     .line('    if ((error as any).code === "ERR_MODULE_NOT_FOUND") {')
     .line(
-      '      throw new Error("bcrypt not installed. Run: npm install bcrypt");',
+      '      throw new Error("bcryptjs not installed. Run: npm install bcryptjs");',
     )
     .line("    }")
     .line("    throw error;")

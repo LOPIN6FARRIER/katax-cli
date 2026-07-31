@@ -13,6 +13,7 @@ import {
   resolveSafePathSegments,
   resolveWithinRoot,
 } from "../utils/file-utils.js";
+import { checkAndNotifyProjectDependencyUpdates } from "../utils/version-check.js";
 import { FieldConfig } from "../types/index.js";
 import { autoRegenerateDocs } from "./generate-docs.js";
 
@@ -107,7 +108,7 @@ export async function addEndpointCommand(
     // Pinned rather than unpinned "install katax-core" (which npm resolves to
     // latest): the generated validators/schemas below assume this CLI's
     // known-compatible katax-core API shape, not whatever ships next.
-    await execa("npm", ["install", "katax-core@^1.6.3"], { cwd: process.cwd() });
+    await execa("npm", ["install", "katax-core@^1.6.5"], { cwd: process.cwd() });
     spinner.succeed("katax-core installed");
   }
 
@@ -272,6 +273,7 @@ export async function addEndpointCommand(
     console.log();
 
     await autoRegenerateDocs(process.cwd());
+    await checkAndNotifyProjectDependencyUpdates(process.cwd());
   } catch (err) {
     spinner.fail("Failed to generate endpoint");
     error(err instanceof Error ? err.message : "Unknown error");

@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import path from 'path';
 import { title, info, gray, error, warning } from '../utils/logger.js';
 import { fileExists } from '../utils/file-utils.js';
+import { checkForUpdates } from '../utils/version-check.js';
 
 export async function infoCommand() {
   title('📊 Project Information');
@@ -24,10 +25,36 @@ export async function infoCommand() {
 
   // Check for katax-core
   const hasKataxCore = packageJson.dependencies?.['katax-core'];
+  const hasKataxServiceManager = packageJson.dependencies?.['katax-service-manager'];
   info('Dependencies:');
-  gray(`  katax-core: ${hasKataxCore ? '✅ Installed' : '❌ Not installed'}`);
+  gray(`  katax-core: ${hasKataxCore ? `✅ ${hasKataxCore}` : '❌ Not installed'}`);
+  gray(
+    `  katax-service-manager: ${hasKataxServiceManager ? `✅ ${hasKataxServiceManager}` : '❌ Not installed'}`,
+  );
   gray(`  express: ${packageJson.dependencies?.express ? '✅ Installed' : '❌ Not installed'}`);
   gray(`  TypeScript: ${packageJson.devDependencies?.typescript ? '✅ Installed' : '❌ Not installed'}\n`);
+
+  // Check for available updates (non-blocking, cached ~1 day)
+  const toCheck: Array<{ name: string; current: string }> = [];
+  if (hasKataxCore) toCheck.push({ name: 'katax-core', current: hasKataxCore });
+  if (hasKataxServiceManager) {
+    toCheck.push({ name: 'katax-service-manager', current: hasKataxServiceManager });
+  }
+
+  if (toCheck.length > 0) {
+    info('Checking for updates...');
+    const results = await checkForUpdates(toCheck);
+    for (const { name, current, latest, hasUpdate } of results) {
+      if (latest === null) {
+        gray(`  ${name}: ${current} (could not reach npm registry)`);
+      } else if (hasUpdate) {
+        warning(`  ${name}: ${current} -> ${latest} available (npm install ${name}@latest)`);
+      } else {
+        gray(`  ${name}: ${current} (up to date)`);
+      }
+    }
+    console.log();
+  }
 
   // Scan for API routes
   const apiPath = path.join(process.cwd(), 'src', 'api');
