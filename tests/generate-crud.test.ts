@@ -51,4 +51,40 @@ describe("generate-crud nested resources", () => {
       "from '../../../middleware/rate-limit.middleware.js';",
     );
   });
+
+  it("wires a real authenticateToken middleware instead of a commented-out placeholder (audit regression)", () => {
+    const resource = __crudTestUtils.resolveResourceNaming("admin/users");
+
+    const routes = __crudTestUtils.generateRoutes(
+      resource.pascalName,
+      resource.camelName,
+      resource.lowerName,
+      resource.routePath,
+      ["GET"],
+      true,
+      false,
+      resource,
+    );
+
+    expect(routes).toContain(
+      "import { authenticateToken } from '../../../shared/jwt.utils.js';",
+    );
+    expect(routes).toContain("router.get('/', authenticateToken, list");
+    expect(routes).not.toContain("requireAuth");
+    expect(routes).not.toContain("/* ");
+  });
+
+  it("rejects path traversal attempts (audit regression)", () => {
+    expect(() =>
+      __crudTestUtils.resolveResourceNaming("../../../../etc/foo"),
+    ).toThrow(/only contain letters, numbers/);
+    expect(() =>
+      __crudTestUtils.resolveResourceNaming("admin/../../etc"),
+    ).toThrow(/only contain letters, numbers/);
+  });
+
+  it("keeps the resolved basePath inside the project's src/api directory", () => {
+    const resource = __crudTestUtils.resolveResourceNaming("admin/users");
+    expect(resource.basePath.startsWith(process.cwd())).toBe(true);
+  });
 });

@@ -64,3 +64,37 @@ describe("init package manager helpers", () => {
     });
   });
 });
+
+describe("init project name validation (audit regression)", () => {
+  it("accepts letters, numbers, hyphens and underscores", () => {
+    expect(__initTestUtils.isValidProjectName("my-api")).toBe(true);
+    expect(__initTestUtils.isValidProjectName("my_api_2")).toBe(true);
+  });
+
+  it("rejects path traversal attempts", () => {
+    expect(__initTestUtils.isValidProjectName("../../../tmp/pwn")).toBe(false);
+    expect(__initTestUtils.isValidProjectName("../pwn")).toBe(false);
+  });
+
+  it("rejects absolute paths and separators", () => {
+    expect(__initTestUtils.isValidProjectName("/etc/pwn")).toBe(false);
+    expect(__initTestUtils.isValidProjectName("a/b")).toBe(false);
+  });
+
+  it("rejects empty strings and names with spaces", () => {
+    expect(__initTestUtils.isValidProjectName("")).toBe(false);
+    expect(__initTestUtils.isValidProjectName("my api")).toBe(false);
+  });
+});
+
+describe("pinned katax-core/katax-service-manager versions (audit regression)", () => {
+  it("does not use an unpinned 'latest' version", () => {
+    expect(__initTestUtils.KATAX_CORE_VERSION).not.toBe("latest");
+    expect(__initTestUtils.KATAX_SERVICE_MANAGER_VERSION).not.toBe("latest");
+  });
+
+  it("pins to a concrete semver range", () => {
+    expect(__initTestUtils.KATAX_CORE_VERSION).toMatch(/^\^?\d+\.\d+\.\d+$/);
+    expect(__initTestUtils.KATAX_SERVICE_MANAGER_VERSION).toMatch(/^\^?\d+\.\d+\.\d+$/);
+  });
+});

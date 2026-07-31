@@ -77,6 +77,55 @@ export async function ensureDir(dirPath: string): Promise<void> {
   await fs.ensureDir(dirPath);
 }
 
+const SAFE_PATH_SEGMENT = /^[a-z0-9_-]+$/;
+
+/**
+ * Split a user-supplied resource/endpoint name (e.g. "admin/users") into safe
+ * path segments, rejecting anything that could escape the target directory
+ * (`..`, absolute paths, empty segments, or characters outside [a-z0-9_-]).
+ *
+ * This is the single point of validation used by init/add-endpoint/
+ * generate-crud/generate-repository - previously each command re-implemented
+ * its own splitting logic without filtering `..`, which allowed
+ * `katax add endpoint "../../../../etc/foo"` to write outside the project.
+ */
+export function resolveSafePathSegments(input: string, kind = "name"): string[] {
+  const segments = input
+    .split("/")
+    .map((segment) => segment.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (segments.length === 0) {
+    throw new Error(`${kind} is required`);
+  }
+
+  for (const segment of segments) {
+    if (!SAFE_PATH_SEGMENT.test(segment)) {
+      throw new Error(
+        `Invalid ${kind} "${input}": segment "${segment}" may only contain letters, ` +
+          `numbers, "-" and "_" (no "..", "/", spaces, or other special characters).`,
+      );
+    }
+  }
+
+  return segments;
+}
+
+/**
+ * Join `segments` onto `root` and verify the resolved path did not escape
+ * `root`. Defense in depth alongside resolveSafePathSegments(): even if a
+ * caller passes already-split segments without going through the segment
+ * validator, this still refuses to write outside the intended directory.
+ */
+export function resolveWithinRoot(root: string, ...segments: string[]): string {
+  const resolvedRoot = path.resolve(root);
+  const resolved = path.resolve(resolvedRoot, ...segments);
+  if (resolved !== resolvedRoot && !resolved.startsWith(resolvedRoot + path.sep)) {
+    throw new Error(`Refusing to write outside of "${resolvedRoot}"`);
+  }
+  return resolved;
+}
+
 /**
  * Convert string to PascalCase
  */
