@@ -75,4 +75,19 @@ describe("generate-repository templates", () => {
     expect(mongoTemplate).toContain("await db.getClient()");
     expect(mongoTemplate).toContain("collection<ProductsRecord>");
   });
+
+  it("rejects path traversal attempts (audit regression)", () => {
+    expect(() =>
+      __repositoryTestUtils.resolveResourceNaming("../../../../etc/foo"),
+    ).toThrow(/only contain letters, numbers/);
+    expect(() =>
+      __repositoryTestUtils.resolveResourceNaming("admin/../../etc"),
+    ).toThrow(/only contain letters, numbers/);
+  });
+
+  it("keeps the resolved basePath inside the project's src/api directory", () => {
+    const resource =
+      __repositoryTestUtils.resolveResourceNaming("admin/products");
+    expect(resource.basePath.startsWith(process.cwd())).toBe(true);
+  });
 });

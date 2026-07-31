@@ -45,4 +45,36 @@ describe("add-endpoint nested resources", () => {
     expect(routes).toContain("@route GET /api/admin/users");
     expect(routes).toContain("@route PATCH /api/admin/users/:id");
   });
+
+  it("rejects path traversal attempts (audit regression)", () => {
+    expect(() =>
+      __endpointTestUtils.resolveResourceNaming("../../../../etc/foo"),
+    ).toThrow(/only contain letters, numbers/);
+    expect(() =>
+      __endpointTestUtils.resolveResourceNaming("admin/../../etc"),
+    ).toThrow(/only contain letters, numbers/);
+  });
+
+  it("rejects empty and whitespace-only names", () => {
+    expect(() => __endpointTestUtils.resolveResourceNaming("")).toThrow(
+      /Endpoint name is required/,
+    );
+    expect(() => __endpointTestUtils.resolveResourceNaming("   ")).toThrow(
+      /Endpoint name is required/,
+    );
+  });
+
+  it("rejects segments with spaces or special characters", () => {
+    expect(() =>
+      __endpointTestUtils.resolveResourceNaming("admin users"),
+    ).toThrow(/only contain letters, numbers/);
+    expect(() =>
+      __endpointTestUtils.resolveResourceNaming("admin/$(rm -rf)"),
+    ).toThrow(/only contain letters, numbers/);
+  });
+
+  it("keeps the resolved basePath inside the project's src/api directory", () => {
+    const resource = __endpointTestUtils.resolveResourceNaming("admin/users");
+    expect(resource.basePath.startsWith(process.cwd())).toBe(true);
+  });
 });

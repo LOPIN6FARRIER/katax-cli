@@ -10,6 +10,8 @@ import {
   ensureDir,
   toPascalCase,
   toCamelCase,
+  resolveSafePathSegments,
+  resolveWithinRoot,
 } from "../utils/file-utils.js";
 import { FieldConfig } from "../types/index.js";
 import { autoRegenerateDocs } from "./generate-docs.js";
@@ -45,14 +47,7 @@ function getMiddlewareImportPath(resource: ResourceNaming): string {
 }
 
 function resolveResourceNaming(input: string): ResourceNaming {
-  const segments = input
-    .split("/")
-    .map((segment) => segment.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (segments.length === 0) {
-    throw new Error("Endpoint name is required");
-  }
+  const segments = resolveSafePathSegments(input, "Endpoint name");
 
   const lowerName = segments[segments.length - 1] as string;
   const joinedForCase = segments.join("-");
@@ -62,7 +57,7 @@ function resolveResourceNaming(input: string): ResourceNaming {
 
   return {
     segments,
-    basePath: path.join(process.cwd(), "src", "api", ...segments),
+    basePath: resolveWithinRoot(process.cwd(), "src", "api", ...segments),
     lowerName,
     camelName,
     pascalName,
@@ -109,7 +104,10 @@ export async function addEndpointCommand(
 
     const spinner = ora("Installing katax-core...").start();
     const { execa } = await import("execa");
-    await execa("npm", ["install", "katax-core"], { cwd: process.cwd() });
+    // Pinned rather than unpinned "install katax-core" (which npm resolves to
+    // latest): the generated validators/schemas below assume this CLI's
+    // known-compatible katax-core API shape, not whatever ships next.
+    await execa("npm", ["install", "katax-core@^1.6.3"], { cwd: process.cwd() });
     spinner.succeed("katax-core installed");
   }
 
@@ -972,7 +970,16 @@ async function updateMainRouter(resource: ResourceNaming): Promise<void> {
 
     await fs.writeFile(routerPath, content, "utf-8");
   } catch (err) {
-    // Router file might not exist, which is fine
+    // ENOENT (routes.ts doesn't exist) is expected and fine to ignore silently.
+    // Anything else (permission error, malformed file, etc.) previously failed
+    // the same way with zero visibility - the endpoint would be generated but
+    // never wired into the router, with no indication why.
+    if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
+      warning(
+        `Could not update src/api/routes.ts: ${err instanceof Error ? err.message : String(err)}\n` +
+          `You may need to add the route manually: import ${resource.routerIdentifier} from '${resource.importPath}';`,
+      );
+    }
   }
 }
 

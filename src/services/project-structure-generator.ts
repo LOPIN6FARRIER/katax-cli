@@ -324,7 +324,10 @@ export class ProjectStructureGenerator {
         pino: "^8.17.2",
         "pino-pretty": "^10.3.1",
         ...(this.config.validation === "katax-core" && {
-          "katax-core": "latest",
+          // Pinned rather than "latest" - see the comment on KATAX_CORE_VERSION
+          // in commands/init.ts for why an unpinned dependency here previously
+          // let a future katax-core release silently break generated projects.
+          "katax-core": "^1.6.3",
         }),
         ...(this.config.authentication === "jwt" && {
           jsonwebtoken: "^9.0.2",

@@ -6,6 +6,16 @@ import { execa } from "execa";
 import { success, error, warning, title, info, gray } from "../utils/logger.js";
 import { directoryExists, writeFile, fileExists } from "../utils/file-utils.js";
 
+// Requires a recognized transport scheme and rejects a leading "-", which
+// blocks passing something like "--upload-pack=..." (a git argument-injection
+// vector) as if it were a repo URL - the previous check only looked for the
+// substring "git" anywhere in the string, which every one of those still contains.
+const GIT_URL_PATTERN = /^(https?:\/\/|git@|ssh:\/\/|git:\/\/)\S+$/;
+
+function isValidGitRepoUrl(input: string): boolean {
+  return !input.startsWith("-") && GIT_URL_PATTERN.test(input.trim());
+}
+
 interface DeployConfig {
   appName: string;
   repoUrl: string;
@@ -62,9 +72,8 @@ export async function deployInitCommand() {
       message: "Git repository URL:",
       validate: (input) => {
         if (!input) return "Repository URL is required";
-        // Basic validation for git URLs
-        if (!input.includes("git") && !input.includes(".git")) {
-          return "Please provide a valid Git repository URL";
+        if (!isValidGitRepoUrl(input)) {
+          return "Please provide a valid Git repository URL (https://, ssh://, or git@host:path)";
         }
         return true;
       },
@@ -193,7 +202,9 @@ export async function deployUpdateCommand(options: {
         appName = config.appName;
         info(`📝 Using app name from config: ${chalk.cyan(appName)}`);
       } catch (err) {
-        // Continue to fallback
+        warning(
+          `⚠️  Could not read .katax-deploy.json (${err instanceof Error ? err.message : String(err)}), falling back to directory name`,
+        );
       }
     }
   }
@@ -281,7 +292,9 @@ export async function deployRollbackCommand(options: {
         const config = JSON.parse(configContent);
         appName = config.appName;
       } catch (err) {
-        // Fallback to directory name
+        warning(
+          `Could not read .katax-deploy.json (${err instanceof Error ? err.message : String(err)}), falling back to directory name`,
+        );
       }
     }
   }
@@ -335,7 +348,9 @@ export async function deployLogsCommand(options: {
         const config = JSON.parse(configContent);
         appName = config.appName;
       } catch (err) {
-        // Fallback to directory name
+        warning(
+          `Could not read .katax-deploy.json (${err instanceof Error ? err.message : String(err)}), falling back to directory name`,
+        );
       }
     }
   }
@@ -426,7 +441,14 @@ async function saveAppNameToConfig(
       success(`💾 Saved app name to .katax-deploy.json for future deployments`);
     }
   } catch (err) {
-    // Silent fail - not critical
+    // Not critical (deploy already succeeded by the time this runs), but a
+    // failure here previously vanished completely - surface it unless the
+    // caller explicitly asked for silence.
+    if (!silent) {
+      warning(
+        `Could not save .katax-deploy.json: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 }
 

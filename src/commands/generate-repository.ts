@@ -9,6 +9,8 @@ import {
   toCamelCase,
   toPascalCase,
   writeFile,
+  resolveSafePathSegments,
+  resolveWithinRoot,
 } from "../utils/file-utils.js";
 
 type SupportedDatabase = "postgresql" | "mysql" | "mongodb";
@@ -32,21 +34,14 @@ interface ResourceNaming {
 }
 
 function resolveResourceNaming(input: string): ResourceNaming {
-  const segments = input
-    .split("/")
-    .map((segment) => segment.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (segments.length === 0) {
-    throw new Error("Repository name is required");
-  }
+  const segments = resolveSafePathSegments(input, "Repository name");
 
   const lowerName = segments[segments.length - 1] as string;
   const joinedForCase = segments.join("-");
 
   return {
     segments,
-    basePath: path.join(process.cwd(), "src", "api", ...segments),
+    basePath: resolveWithinRoot(process.cwd(), "src", "api", ...segments),
     lowerName,
     camelName: toCamelCase(joinedForCase),
     pascalName: toPascalCase(joinedForCase),
