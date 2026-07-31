@@ -327,11 +327,11 @@ export class ProjectStructureGenerator {
           // Pinned rather than "latest" - see the comment on KATAX_CORE_VERSION
           // in commands/init.ts for why an unpinned dependency here previously
           // let a future katax-core release silently break generated projects.
-          "katax-core": "^1.6.3",
+          "katax-core": "^1.6.5",
         }),
         ...(this.config.authentication === "jwt" && {
           jsonwebtoken: "^9.0.2",
-          bcrypt: "^5.1.1",
+          bcryptjs: "^2.4.3",
         }),
         ...(this.config.database === "postgresql" && { pg: "^8.11.3" }),
         ...(this.config.database === "mysql" && { mysql2: "^3.6.5" }),
@@ -343,7 +343,6 @@ export class ProjectStructureGenerator {
         "@types/node": "^20.10.6",
         ...(this.config.authentication === "jwt" && {
           "@types/jsonwebtoken": "^9.0.5",
-          "@types/bcrypt": "^5.0.2",
         }),
         ...(this.config.database === "postgresql" && {
           "@types/pg": "^8.10.9",

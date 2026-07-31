@@ -107,7 +107,7 @@ export async function addEndpointCommand(
     // Pinned rather than unpinned "install katax-core" (which npm resolves to
     // latest): the generated validators/schemas below assume this CLI's
     // known-compatible katax-core API shape, not whatever ships next.
-    await execa("npm", ["install", "katax-core@^1.6.3"], { cwd: process.cwd() });
+    await execa("npm", ["install", "katax-core@^1.6.5"], { cwd: process.cwd() });
     spinner.succeed("katax-core installed");
   }
 
