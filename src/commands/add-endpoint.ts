@@ -13,6 +13,7 @@ import {
   resolveSafePathSegments,
   resolveWithinRoot,
 } from "../utils/file-utils.js";
+import { checkAndNotifyProjectDependencyUpdates } from "../utils/version-check.js";
 import { FieldConfig } from "../types/index.js";
 import { autoRegenerateDocs } from "./generate-docs.js";
 
@@ -272,6 +273,7 @@ export async function addEndpointCommand(
     console.log();
 
     await autoRegenerateDocs(process.cwd());
+    await checkAndNotifyProjectDependencyUpdates(process.cwd());
   } catch (err) {
     spinner.fail("Failed to generate endpoint");
     error(err instanceof Error ? err.message : "Unknown error");

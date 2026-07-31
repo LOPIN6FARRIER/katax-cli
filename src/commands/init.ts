@@ -11,6 +11,7 @@ import {
   writeFile,
   copyTemplate,
 } from "../utils/file-utils.js";
+import { checkForUpdates, printUpdateNotices, cliVersion } from "../utils/version-check.js";
 import { ProjectConfig } from "../types/index.js";
 import { generateSwaggerSetup } from "../templates/generators/swagger-template.js";
 import { generateStreamUtils } from "../templates/generators/stream-utils-template.js";
@@ -588,10 +589,39 @@ export async function initCommand(
       );
       gray(`  Swagger UI is pre-configured and ready to use!\n`);
     }
+
+    await checkAndNotifyUpdates(config);
   } catch (err) {
     spinner.fail("Failed to create project");
     error(err instanceof Error ? err.message : "Unknown error");
     process.exit(1);
+  }
+}
+
+/**
+ * Non-blocking, cached (~1 day) check for newer katax-core/katax-service-manager/
+ * katax-cli releases than the ones this run just pinned/is running. Never
+ * throws - a failed registry lookup just means nothing is printed.
+ */
+async function checkAndNotifyUpdates(config: ProjectConfig): Promise<void> {
+  try {
+    const toCheck: Array<{ name: string; current: string }> = [
+      { name: "katax-cli", current: cliVersion() },
+    ];
+    if (config.validation === "katax-core") {
+      toCheck.push({ name: "katax-core", current: KATAX_CORE_VERSION });
+    }
+    if (config.useKataxServiceManager) {
+      toCheck.push({
+        name: "katax-service-manager",
+        current: KATAX_SERVICE_MANAGER_VERSION,
+      });
+    }
+
+    const results = await checkForUpdates(toCheck);
+    printUpdateNotices(results);
+  } catch {
+    // A version check must never fail project creation.
   }
 }
 
