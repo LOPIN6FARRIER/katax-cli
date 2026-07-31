@@ -33,7 +33,7 @@ type PackageManager = "npm" | "pnpm";
 // from this CLI. Bump these deliberately when verifying compatibility with a
 // new katax-core/katax-service-manager release.
 const KATAX_CORE_VERSION = "^1.6.5";
-const KATAX_SERVICE_MANAGER_VERSION = "^0.5.8";
+const KATAX_SERVICE_MANAGER_VERSION = "^0.5.9";
 
 const KATAX_SERVICE_MANAGER_PEERS = [
   "dotenv",
