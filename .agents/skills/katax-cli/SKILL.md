@@ -8,7 +8,7 @@ argument-hint: 'What katax-cli task? (init/add/generate/deploy/fix/info)'
 
 CLI tool for scaffolding Express + TypeScript REST APIs with katax-core validation, and managing VPS deployments via PM2.
 
-**Version: 1.4.4** | `npm install -g katax-cli`
+**Version: 1.5.2** | `npm install -g katax-cli`
 
 ## Commands
 

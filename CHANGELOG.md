@@ -1,5 +1,9 @@
 # Changelog - Katax CLI
 
+## [1.5.2] - 2026-08-06
+
+Current published version. Entries between 1.4.3 and 1.5.2 were not individually tracked in this file — see README.md for the current, accurate command reference (`init`, `add endpoint`, `generate crud/repository/docs`, `deploy init/update/rollback/logs/status`, `fix docs/all/list`, `info`).
+
 ## [1.4.2] - 2026-04-02
 
 ### ✨ Added
