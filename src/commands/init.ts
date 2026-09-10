@@ -920,14 +920,14 @@ async function createProjectStructure(
       "@types/express": "^4.17.21",
       "@types/cors": "^2.8.17",
       "@types/cookie-parser": "^1.4.9",
-      "@types/node": "^22.10.5",
+      "@types/node": "^24.0.0",
       ...(config.authentication === "jwt" && {
         "@types/jsonwebtoken": "^9.0.5",
         // bcryptjs ships its own type declarations - no @types/bcryptjs needed.
       }),
       ...(config.swagger && { "@types/swagger-ui-express": "^4.1.6" }),
       ...(config.database === "postgresql" && { "@types/pg": "^8.10.9" }),
-      typescript: "^5.3.3",
+      typescript: "^6.0.0",
       tsx: "^4.7.0",
       nodemon: "^3.0.2",
       eslint: "^8.56.0",
@@ -1466,7 +1466,7 @@ export function errorMiddleware(
     err,
     req: {
       method: req.method,
-      url: req.url,
+      url: req.originalUrl,
       headers: req.headers
     },
     statusCode,
@@ -1500,7 +1500,7 @@ export function errorMiddleware(
     err,
     req: {
       method: req.method,
-      url: req.url,
+      url: req.originalUrl,
       headers: req.headers
     },
     statusCode,
@@ -2191,10 +2191,18 @@ function logRequest(method: string, url: string, statusCode: number, duration: n
 export function requestLogger(req: Request, res: Response, next: NextFunction): void {
   const startTime = Date.now();
 
+  // req.originalUrl, not req.url: Express rewrites req.url to be relative
+  // to whatever router is currently handling the request (mergeParams
+  // routers, nested routers), so by the time 'finish' fires it had already
+  // logged bare "/" or "/:id" for every route instead of the real path.
+  // Fallback to req.url kept in case a future Express version changes
+  // how (or whether) originalUrl is populated.
+  const path = req.originalUrl || req.url;
+
   // Log response when it finishes
   res.on('finish', () => {
     const duration = Date.now() - startTime;
-    logRequest(req.method, req.url, res.statusCode, duration);
+    logRequest(req.method, path, res.statusCode, duration);
   });
 
   next();
@@ -2209,10 +2217,18 @@ import { logRequest } from '../shared/logger.utils.js';
 export function requestLogger(req: Request, res: Response, next: NextFunction): void {
   const startTime = Date.now();
 
+  // req.originalUrl, not req.url: Express rewrites req.url to be relative
+  // to whatever router is currently handling the request (mergeParams
+  // routers, nested routers), so by the time 'finish' fires it had already
+  // logged bare "/" or "/:id" for every route instead of the real path.
+  // Fallback to req.url kept in case a future Express version changes
+  // how (or whether) originalUrl is populated.
+  const path = req.originalUrl || req.url;
+
   // Log response when it finishes
   res.on('finish', () => {
     const duration = Date.now() - startTime;
-    logRequest(req.method, req.url, res.statusCode, duration);
+    logRequest(req.method, path, res.statusCode, duration);
   });
 
   next();
