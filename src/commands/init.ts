@@ -1123,6 +1123,26 @@ coverage/
     gitattributesContent,
   );
 
+  // Create ecosystem.config.cjs for PM2 - lets `pm2 reload ecosystem.config.cjs`
+  // adopt an already-running process with this same name instead of needing
+  // `pm2 delete` first (PM2 matches processes by name).
+  const ecosystemContent = `module.exports = {
+  apps: [
+    {
+      name: '${config.name}',
+      script: 'dist/index.js',
+      instances: 1,
+      exec_mode: 'fork',
+    },
+  ],
+};
+`;
+
+  await writeFile(
+    path.join(projectPath, "ecosystem.config.cjs"),
+    ecosystemContent,
+  );
+
   // Create index.ts
   let indexContent: string;
   const kataxImportSourceRoot =
