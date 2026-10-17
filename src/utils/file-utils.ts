@@ -1,6 +1,5 @@
 import fs from 'fs-extra';
 import path from 'path';
-import ejs from 'ejs';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
@@ -11,41 +10,9 @@ const __dirname = dirname(__filename);
  * Get the templates directory path
  */
 export function getTemplatesDir(): string {
-  // In development: ../../templates
-  // In production: ../templates (dist folder)
-  const devPath = path.join(__dirname, '..', '..', 'templates');
-  const prodPath = path.join(__dirname, '..', 'templates');
-  
-  return fs.existsSync(devPath) ? devPath : prodPath;
-}
-
-/**
- * Render an EJS template
- */
-export async function renderTemplate(templatePath: string, data: any): Promise<string> {
-  const fullPath = path.join(getTemplatesDir(), templatePath);
-  const templateContent = await fs.readFile(fullPath, 'utf-8');
-  return ejs.render(templateContent, data);
-}
-
-/**
- * Copy template file to destination
- */
-export async function copyTemplate(
-  templatePath: string,
-  destinationPath: string,
-  data?: any
-): Promise<void> {
-  const sourcePath = path.join(getTemplatesDir(), templatePath);
-  
-  await fs.ensureDir(path.dirname(destinationPath));
-  
-  if (data) {
-    const rendered = await renderTemplate(templatePath, data);
-    await fs.writeFile(destinationPath, rendered, 'utf-8');
-  } else {
-    await fs.copy(sourcePath, destinationPath);
-  }
+  // src/utils (tsx) and dist/utils (published) are both two levels below the
+  // package root, where templates/ lives (it's in package.json "files").
+  return path.join(__dirname, '..', '..', 'templates');
 }
 
 /**

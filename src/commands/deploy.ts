@@ -533,17 +533,6 @@ async function executeInitialDeploy(config: DeployConfig): Promise<void> {
     process.exit(1);
   }
 
-  // Save config for future updates
-  const deployConfigFile = {
-    appName: config.appName,
-    createdAt: new Date().toISOString(),
-    branch: config.branch,
-  };
-  await writeFile(
-    path.join(fullPath, ".katax-deploy.json"),
-    JSON.stringify(deployConfigFile, null, 2),
-  );
-
   // Step 2: Clone repository
   const cloneSpinner = ora("Cloning repository...").start();
   try {
@@ -555,6 +544,12 @@ async function executeInitialDeploy(config: DeployConfig): Promise<void> {
       fullPath,
     ]);
     cloneSpinner.succeed("Repository cloned");
+
+    // Written after the clone: git refuses to clone into a non-empty directory.
+    await writeFile(
+      path.join(fullPath, ".katax-deploy.json"),
+      JSON.stringify({ appName: config.appName, createdAt: new Date().toISOString(), branch: config.branch }, null, 2),
+    );
   } catch (err) {
     cloneSpinner.fail("Failed to clone repository");
     console.error(err);

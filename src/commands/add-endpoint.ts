@@ -1,996 +1,319 @@
-import chalk from "chalk";
-import inquirer from "inquirer";
-import ora from "ora";
+import fs from "fs";
 import path from "path";
-import fs from "fs/promises";
-import { success, error, warning, gray, title, info } from "../utils/logger.js";
-import {
-  fileExists,
-  writeFile,
-  ensureDir,
-  toPascalCase,
-  toCamelCase,
-  resolveSafePathSegments,
-  resolveWithinRoot,
-} from "../utils/file-utils.js";
+import inquirer from "inquirer";
+import { error, gray, info, success, title, warning } from "../utils/logger.js";
 import { checkAndNotifyProjectDependencyUpdates } from "../utils/version-check.js";
-import { FieldConfig } from "../types/index.js";
-import { autoRegenerateDocs } from "./generate-docs.js";
+import { resolveResourceNaming } from "../generators/resource/naming.js";
+import type { ResourceNaming } from "../generators/resource/naming.js";
+import { FIELD_TYPES, parseFieldType, parseFieldsSpec, validateFieldName } from "../generators/resource/fields.js";
+import type { FieldSpec, IdType } from "../generators/resource/fields.js";
+import {
+  ALL_METHODS,
+  renderController,
+  renderHandler,
+  renderMigration,
+  renderRepository,
+  renderRoutes,
+  renderRowType,
+  renderTypes,
+  renderValidator,
+} from "../generators/resource/templates.js";
+import type { ResourceContext, ResourceMethod } from "../generators/resource/templates.js";
+import {
+  missingApiUtilsExports,
+  planMigration,
+  planMissingSharedFiles,
+  planRoutesRegistration,
+  detectRowIdType,
+  planRowType,
+  readProjectTemplate,
+} from "../generators/resource/project-files.js";
+import type { PlannedFile } from "../generators/resource/project-files.js";
 
-type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-
-interface EndpointOptions {
-  methods?: string[];
-  limiter?: boolean;
+export interface AddEndpointOptions {
+  /** Comma list: list,get,create,update,delete (default: all) */
+  methods?: string;
+  /** uuid (default) | number | string */
+  id?: string;
+  /** "name:string, price:number?, starts_on:date" */
+  fields?: string;
+  table?: string;
+  singular?: string;
+  public?: boolean;
+  /** commander sets false with --no-repository */
+  repository?: boolean;
+  dryRun?: boolean;
+  force?: boolean;
+  /** commander sets false with --no-interactive */
+  interactive?: boolean;
 }
 
-interface ResourceNaming {
-  segments: string[];
-  basePath: string;
-  lowerName: string;
-  camelName: string;
-  pascalName: string;
-  routePath: string;
-  importPath: string;
-  routerIdentifier: string;
-}
-
-function getSrcRelativePrefix(resource: ResourceNaming): string {
-  return "../".repeat(resource.segments.length + 1);
-}
-
-function getSharedImportPath(resource: ResourceNaming): string {
-  return `${getSrcRelativePrefix(resource)}shared/api.utils.js`;
-}
-
-function getMiddlewareImportPath(resource: ResourceNaming): string {
-  return `${getSrcRelativePrefix(resource)}middleware/rate-limit.middleware.js`;
-}
-
-function resolveResourceNaming(input: string): ResourceNaming {
-  const segments = resolveSafePathSegments(input, "Endpoint name");
-
-  const lowerName = segments[segments.length - 1] as string;
-  const joinedForCase = segments.join("-");
-  const camelName = toCamelCase(joinedForCase);
-  const pascalName = toPascalCase(joinedForCase);
-  const routerIdentifier = `${camelName}Router`;
-
-  return {
-    segments,
-    basePath: resolveWithinRoot(process.cwd(), "src", "api", ...segments),
-    lowerName,
-    camelName,
-    pascalName,
-    routePath: segments.join("/"),
-    importPath: `./${segments.join("/")}/${lowerName}.routes.js`,
-    routerIdentifier,
-  };
-}
-
-export async function addEndpointCommand(
-  name: string,
-  options: EndpointOptions = {},
-) {
-  const resource = resolveResourceNaming(name);
-  title(`🎯 Add Endpoint: ${name}`);
-
-  // Check if we're in a Katax project
-  if (!fileExists(path.join(process.cwd(), "package.json"))) {
-    error("Not in a project directory!");
-    gray("Run this command from your project root\n");
-    process.exit(1);
-  }
-
-  // Check if katax-core is installed
-  const packageJsonPath = path.join(process.cwd(), "package.json");
-  const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf-8"));
-  const hasKataxCore = packageJson.dependencies?.["katax-core"];
-
-  if (!hasKataxCore) {
-    warning("katax-core is not installed in this project");
-    const { install } = await inquirer.prompt([
-      {
-        type: "confirm",
-        name: "install",
-        message: "Would you like to install katax-core?",
-        default: true,
-      },
-    ]);
-
-    if (!install) {
-      error("Cannot create endpoint without validation library");
-      process.exit(1);
-    }
-
-    const spinner = ora("Installing katax-core...").start();
-    const { execa } = await import("execa");
-    // Pinned rather than unpinned "install katax-core" (which npm resolves to
-    // latest): the generated validators/schemas below assume this CLI's
-    // known-compatible katax-core API shape, not whatever ships next.
-    await execa("npm", ["install", "katax-core@^1.6.5"], { cwd: process.cwd() });
-    spinner.succeed("katax-core installed");
-  }
-
-  // Ask which HTTP methods to generate
-  const { methodChoice } = await inquirer.prompt([
-    {
-      type: "list",
-      name: "methodChoice",
-      message: "Which HTTP methods do you want to generate?",
-      choices: [
-        { name: "All (GET, POST, PUT, DELETE)", value: "all" },
-        { name: "Select specific methods", value: "select" },
-      ],
-      default: "all",
-    },
-  ]);
-
-  let selectedMethods: HttpMethod[] = ["GET", "POST", "PUT", "DELETE"];
-
-  if (methodChoice === "select") {
-    const { methods } = await inquirer.prompt([
-      {
-        type: "checkbox",
-        name: "methods",
-        message: "Select HTTP methods:",
-        choices: [
-          { name: "GET", value: "GET", checked: true },
-          { name: "POST", value: "POST", checked: true },
-          { name: "PUT", value: "PUT", checked: false },
-          { name: "PATCH", value: "PATCH", checked: false },
-          { name: "DELETE", value: "DELETE", checked: false },
-        ],
-        validate: (input: string[]) => {
-          if (input.length === 0) {
-            return "You must select at least one method";
-          }
-          return true;
-        },
-      },
-    ]);
-    selectedMethods = methods;
-  }
-
-  const { addLimiter } = await inquirer.prompt([
-    {
-      type: "confirm",
-      name: "addLimiter",
-      message: "Add rate limiter to generated routes?",
-      default: options.limiter ?? false,
-    },
-  ]);
-
-  if (addLimiter) {
-    const hasRateLimit =
-      packageJson.dependencies?.["express-rate-limit"] ||
-      packageJson.devDependencies?.["express-rate-limit"];
-
-    if (!hasRateLimit) {
-      const spinner = ora("Installing express-rate-limit...").start();
-      const { execa } = await import("execa");
-      await execa("npm", ["install", "express-rate-limit"], {
-        cwd: process.cwd(),
-      });
-      spinner.succeed("express-rate-limit installed");
-    }
-  }
-
-  // Collect fields for POST/PUT/PATCH
-  let fields: FieldConfig[] = [];
-  const needsBody = selectedMethods.some((m) =>
-    ["POST", "PUT", "PATCH"].includes(m),
-  );
-
-  if (needsBody) {
-    info("\nDefine request body fields:");
-    let addingFields = true;
-
-    while (addingFields) {
-      const { fieldName } = await inquirer.prompt([
-        {
-          type: "input",
-          name: "fieldName",
-          message: "Field name (press Enter to finish):",
-          validate: (input: string) => {
-            if (input && !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(input)) {
-              return "Field name must be a valid identifier";
-            }
-            return true;
-          },
-        },
-      ]);
-
-      if (!fieldName) {
-        addingFields = false;
-        break;
-      }
-
-      const fieldConfig = await inquirer.prompt([
-        {
-          type: "list",
-          name: "type",
-          message: `Type for "${fieldName}":`,
-          choices: ["string", "number", "boolean", "date", "email"],
-        },
-        {
-          type: "confirm",
-          name: "required",
-          message: "Required?",
-          default: true,
-        },
-      ]);
-
-      fields.push({
-        name: fieldName,
-        type: fieldConfig.type,
-        required: fieldConfig.required,
-        rules: [],
-      });
-
-      gray(`  ✓ Added field: ${fieldName} (${fieldConfig.type})`);
-    }
-
-    if (fields.length === 0 && needsBody) {
-      warning("No fields defined. Adding default 'name' field.");
-      fields.push({
-        name: "name",
-        type: "string",
-        required: true,
-        rules: [],
-      });
-    }
-  }
-
-  const spinner = ora("Generating endpoint files...").start();
-
-  try {
-    await generateEndpointFiles(resource, selectedMethods, fields, addLimiter);
-    spinner.succeed("Endpoint files generated");
-
-    success(`\n✨ Endpoint "${name}" created successfully!\n`);
-
-    info("Generated files:");
-    gray(`  src/api/${resource.routePath}/${resource.lowerName}.validator.ts`);
-    gray(`  src/api/${resource.routePath}/${resource.lowerName}.controller.ts`);
-    gray(`  src/api/${resource.routePath}/${resource.lowerName}.handler.ts`);
-    gray(`  src/api/${resource.routePath}/${resource.lowerName}.routes.ts`);
-    gray(`  Updated: src/api/routes.ts\n`);
-
-    info("Generated endpoints:");
-    selectedMethods.forEach((method) => {
-      if (method === "GET") {
-        gray(`  GET    /api/${resource.routePath}     - List all`);
-        gray(`  GET    /api/${resource.routePath}/:id - Get by ID`);
-      } else if (method === "POST") {
-        gray(`  POST   /api/${resource.routePath}     - Create`);
-      } else if (method === "PUT" || method === "PATCH") {
-        gray(`  ${method.padEnd(6)} /api/${resource.routePath}/:id - Update`);
-      } else if (method === "DELETE") {
-        gray(`  DELETE /api/${resource.routePath}/:id - Delete`);
-      }
-    });
-    console.log();
-
-    await autoRegenerateDocs(process.cwd());
-    await checkAndNotifyProjectDependencyUpdates(process.cwd());
-  } catch (err) {
-    spinner.fail("Failed to generate endpoint");
-    error(err instanceof Error ? err.message : "Unknown error");
-    console.error(err);
-    process.exit(1);
-  }
-}
-
-async function generateEndpointFiles(
-  resource: ResourceNaming,
-  methods: HttpMethod[],
-  fields: FieldConfig[],
-  addLimiter: boolean,
-): Promise<void> {
-  const basePath = resource.basePath;
-  await ensureDir(basePath);
-
-  const pascalName = resource.pascalName;
-  const camelName = resource.camelName;
-  const lowerName = resource.lowerName;
-
-  // Generate all files
-  await writeFile(
-    path.join(basePath, `${lowerName}.validator.ts`),
-    generateValidator(pascalName, camelName, methods, fields, resource),
-  );
-
-  await writeFile(
-    path.join(basePath, `${lowerName}.controller.ts`),
-    generateController(
-      pascalName,
-      camelName,
-      lowerName,
-      methods,
-      fields,
-      resource,
-    ),
-  );
-
-  await writeFile(
-    path.join(basePath, `${lowerName}.handler.ts`),
-    generateHandler(pascalName, camelName, lowerName, methods, resource),
-  );
-
-  await writeFile(
-    path.join(basePath, `${lowerName}.routes.ts`),
-    generateRoutes(
-      pascalName,
-      camelName,
-      lowerName,
-      resource.routePath,
-      methods,
-      addLimiter,
-      resource,
-    ),
-  );
-
-  if (addLimiter) {
-    await ensureRateLimitMiddlewareFile();
-  }
-
-  // Update main router
-  await updateMainRouter(resource);
-}
-
-function generateValidator(
-  pascalName: string,
-  camelName: string,
-  methods: HttpMethod[],
-  fields: FieldConfig[],
-  resource: ResourceNaming,
-): string {
-  const lines: string[] = [
-    "import { k, kataxInfer } from 'katax-core';",
-    `import { validateSchema, ValidationResult } from '${getSharedImportPath(resource)}';`,
-    "",
-    "// ==================== SCHEMAS ====================",
-    "",
-  ];
-
-  // ID params schema (for GET by ID, PUT, DELETE)
-  if (methods.some((m) => ["GET", "PUT", "PATCH", "DELETE"].includes(m))) {
-    lines.push(
-      "/**",
-      ` * Schema for ${camelName} ID params`,
-      " */",
-      `export const ${camelName}IdSchema = k.object({`,
-      "  id: k.string().minLength(1)",
-      "});",
-      "",
-      `export type ${pascalName}IdParams = kataxInfer<typeof ${camelName}IdSchema>;`,
-      "",
-    );
-  }
-
-  // Query params schema for GET list
-  if (methods.includes("GET")) {
-    lines.push(
-      "/**",
-      ` * Schema for ${camelName} query params (list)`,
-      " */",
-      `export const ${camelName}QuerySchema = k.object({`,
-      "  page: k.number().optional(),",
-      "  limit: k.number().optional(),",
-      "  search: k.string().optional()",
-      "});",
-      "",
-      `export type ${pascalName}Query = kataxInfer<typeof ${camelName}QuerySchema>;`,
-      "",
-    );
-  }
-
-  // Create schema for POST
-  if (methods.includes("POST")) {
-    lines.push(
-      "/**",
-      ` * Schema for creating ${camelName}`,
-      " */",
-      `export const create${pascalName}Schema = k.object({`,
-    );
-    fields.forEach((field, i) => {
-      let schema =
-        field.type === "email" ? "k.string().email()" : `k.${field.type}()`;
-      if (!field.required) schema += ".optional()";
-      lines.push(
-        `  ${field.name}: ${schema}${i < fields.length - 1 ? "," : ""}`,
-      );
-    });
-    lines.push(
-      "});",
-      "",
-      `export type Create${pascalName}Data = kataxInfer<typeof create${pascalName}Schema>;`,
-      "",
-    );
-  }
-
-  // Update schema for PUT/PATCH
-  if (methods.some((m) => ["PUT", "PATCH"].includes(m))) {
-    lines.push(
-      "/**",
-      ` * Schema for updating ${camelName}`,
-      " */",
-      `export const update${pascalName}Schema = k.object({`,
-    );
-    fields.forEach((field, i) => {
-      const schema =
-        field.type === "email"
-          ? "k.string().email().optional()"
-          : `k.${field.type}().optional()`;
-      lines.push(
-        `  ${field.name}: ${schema}${i < fields.length - 1 ? "," : ""}`,
-      );
-    });
-    lines.push(
-      "});",
-      "",
-      `export type Update${pascalName}Data = kataxInfer<typeof update${pascalName}Schema>;`,
-      "",
-    );
-  }
-
-  // Validate functions
-  lines.push("// ==================== VALIDATORS ====================", "");
-
-  if (methods.some((m) => ["GET", "PUT", "PATCH", "DELETE"].includes(m))) {
-    lines.push(
-      `export async function validate${pascalName}Id(data: unknown): Promise<ValidationResult<${pascalName}IdParams>> {`,
-      `  return validateSchema<${pascalName}IdParams>(${camelName}IdSchema, data);`,
-      "}",
-      "",
-    );
-  }
-
-  if (methods.includes("GET")) {
-    lines.push(
-      `export async function validate${pascalName}Query(data: unknown): Promise<ValidationResult<${pascalName}Query>> {`,
-      `  return validateSchema<${pascalName}Query>(${camelName}QuerySchema, data);`,
-      "}",
-      "",
-    );
-  }
-
-  if (methods.includes("POST")) {
-    lines.push(
-      `export async function validate${pascalName}Create(data: unknown): Promise<ValidationResult<Create${pascalName}Data>> {`,
-      `  return validateSchema<Create${pascalName}Data>(create${pascalName}Schema, data);`,
-      "}",
-      "",
-    );
-  }
-
-  if (methods.some((m) => ["PUT", "PATCH"].includes(m))) {
-    lines.push(
-      `export async function validate${pascalName}Update(data: unknown): Promise<ValidationResult<Update${pascalName}Data>> {`,
-      `  return validateSchema<Update${pascalName}Data>(update${pascalName}Schema, data);`,
-      "}",
-      "",
-    );
-  }
-
-  return lines.join("\n");
-}
-
-function generateController(
-  pascalName: string,
-  camelName: string,
-  lowerName: string,
-  methods: HttpMethod[],
-  fields: FieldConfig[],
-  resource: ResourceNaming,
-): string {
-  const lines: string[] = [
-    `import { ControllerResult, createResponse } from '${getSharedImportPath(resource)}';`,
-  ];
-
-  // Import types
-  const types: string[] = [];
-  if (methods.includes("GET"))
-    types.push(`${pascalName}Query`, `${pascalName}IdParams`);
-  if (methods.includes("POST")) types.push(`Create${pascalName}Data`);
-  if (methods.some((m) => ["PUT", "PATCH"].includes(m))) {
-    types.push(`Update${pascalName}Data`);
-    if (!types.includes(`${pascalName}IdParams`))
-      types.push(`${pascalName}IdParams`);
-  }
-  if (methods.includes("DELETE") && !types.includes(`${pascalName}IdParams`)) {
-    types.push(`${pascalName}IdParams`);
-  }
-
-  if (types.length > 0) {
-    lines.push(
-      `import { ${types.join(", ")} } from './${lowerName}.validator.js';`,
-    );
-  }
-
-  lines.push(
-    "",
-    "// ==================== CONTROLLERS ====================",
-    "",
-  );
-
-  // GET list
-  if (methods.includes("GET")) {
-    lines.push(
-      "/**",
-      ` * List all ${camelName}s`,
-      " */",
-      `export async function list${pascalName}s(query: ${pascalName}Query): Promise<ControllerResult<any[]>> {`,
-      "  try {",
-      "    // TODO: Implement database query",
-      `    const mock${pascalName}s = [`,
-      `      { id: '1', ${fields.length > 0 ? `${fields[0].name}: 'Sample 1',` : ""} createdAt: new Date().toISOString() },`,
-      `      { id: '2', ${fields.length > 0 ? `${fields[0].name}: 'Sample 2',` : ""} createdAt: new Date().toISOString() }`,
-      "    ];",
-      "",
-      `    return createResponse.success('${pascalName}s retrieved', mock${pascalName}s);`,
-      "  } catch (error) {",
-      `    return createResponse.error('Failed to list ${camelName}s', error instanceof Error ? error.message : 'Unknown error', 500);`,
-      "  }",
-      "}",
-      "",
-    );
-
-    // GET by ID
-    lines.push(
-      "/**",
-      ` * Get ${camelName} by ID`,
-      " */",
-      `export async function get${pascalName}(params: ${pascalName}IdParams): Promise<ControllerResult<any>> {`,
-      "  try {",
-      "    // TODO: Implement database query",
-      `    const mock${pascalName} = { id: params.id, ${fields.length > 0 ? `${fields[0].name}: 'Sample',` : ""} createdAt: new Date().toISOString() };`,
-      "",
-      `    return createResponse.success('${pascalName} retrieved', mock${pascalName});`,
-      "  } catch (error) {",
-      `    return createResponse.error('Failed to get ${camelName}', error instanceof Error ? error.message : 'Unknown error', 500);`,
-      "  }",
-      "}",
-      "",
-    );
-  }
-
-  // POST create
-  if (methods.includes("POST")) {
-    lines.push(
-      "/**",
-      ` * Create ${camelName}`,
-      " */",
-      `export async function create${pascalName}(data: Create${pascalName}Data): Promise<ControllerResult<any>> {`,
-      "  try {",
-      "    // TODO: Implement database insertion",
-      `    const new${pascalName} = { id: Math.random().toString(36).slice(2, 11), ...data, createdAt: new Date().toISOString() };`,
-      "",
-      `    return createResponse.success('${pascalName} created', new${pascalName}, 201);`,
-      "  } catch (error) {",
-      `    return createResponse.error('Failed to create ${camelName}', error instanceof Error ? error.message : 'Unknown error', 500);`,
-      "  }",
-      "}",
-      "",
-    );
-  }
-
-  // PUT/PATCH update
-  if (methods.some((m) => ["PUT", "PATCH"].includes(m))) {
-    lines.push(
-      "/**",
-      ` * Update ${camelName}`,
-      " */",
-      `export async function update${pascalName}(params: ${pascalName}IdParams, data: Update${pascalName}Data): Promise<ControllerResult<any>> {`,
-      "  try {",
-      "    // TODO: Implement database update",
-      `    const updated${pascalName} = { id: params.id, ...data, updatedAt: new Date().toISOString() };`,
-      "",
-      `    return createResponse.success('${pascalName} updated', updated${pascalName});`,
-      "  } catch (error) {",
-      `    return createResponse.error('Failed to update ${camelName}', error instanceof Error ? error.message : 'Unknown error', 500);`,
-      "  }",
-      "}",
-      "",
-    );
-  }
-
-  // DELETE
-  if (methods.includes("DELETE")) {
-    lines.push(
-      "/**",
-      ` * Delete ${camelName}`,
-      " */",
-      `export async function delete${pascalName}(params: ${pascalName}IdParams): Promise<ControllerResult<void>> {`,
-      "  try {",
-      "    // TODO: Implement database deletion",
-      "",
-      `    return createResponse.success('${pascalName} deleted');`,
-      "  } catch (error) {",
-      `    return createResponse.error('Failed to delete ${camelName}', error instanceof Error ? error.message : 'Unknown error', 500);`,
-      "  }",
-      "}",
-      "",
-    );
-  }
-
-  return lines.join("\n");
-}
-
-function generateHandler(
-  pascalName: string,
-  camelName: string,
-  lowerName: string,
-  methods: HttpMethod[],
-  resource: ResourceNaming,
-): string {
-  const lines: string[] = [
-    "import { Request, Response } from 'express';",
-    `import { sendResponse } from '${getSharedImportPath(resource)}';`,
-  ];
-
-  // Import controllers
-  const controllerImports: string[] = [];
-  if (methods.includes("GET"))
-    controllerImports.push(`list${pascalName}s`, `get${pascalName}`);
-  if (methods.includes("POST")) controllerImports.push(`create${pascalName}`);
-  if (methods.some((m) => ["PUT", "PATCH"].includes(m)))
-    controllerImports.push(`update${pascalName}`);
-  if (methods.includes("DELETE")) controllerImports.push(`delete${pascalName}`);
-
-  lines.push(
-    `import { ${controllerImports.join(", ")} } from './${lowerName}.controller.js';`,
-  );
-
-  // Import validators
-  const validatorImports: string[] = [];
-  if (methods.includes("GET"))
-    validatorImports.push(
-      `validate${pascalName}Query`,
-      `validate${pascalName}Id`,
-    );
-  if (methods.includes("POST"))
-    validatorImports.push(`validate${pascalName}Create`);
-  if (methods.some((m) => ["PUT", "PATCH"].includes(m))) {
-    validatorImports.push(`validate${pascalName}Update`);
-    if (!validatorImports.includes(`validate${pascalName}Id`))
-      validatorImports.push(`validate${pascalName}Id`);
-  }
-  if (
-    methods.includes("DELETE") &&
-    !validatorImports.includes(`validate${pascalName}Id`)
-  ) {
-    validatorImports.push(`validate${pascalName}Id`);
-  }
-
-  lines.push(
-    `import { ${validatorImports.join(", ")} } from './${lowerName}.validator.js';`,
-  );
-
-  lines.push("", "// ==================== HANDLERS ====================", "");
-
-  // GET list handler
-  if (methods.includes("GET")) {
-    lines.push(
-      "/**",
-      ` * Handler for GET /api/${lowerName}`,
-      " */",
-      `export async function list${pascalName}sHandler(req: Request, res: Response): Promise<void> {`,
-      "  await sendResponse(",
-      "    req,",
-      "    res,",
-      `    () => validate${pascalName}Query(req.query),`,
-      `    (validData) => list${pascalName}s(validData)`,
-      "  );",
-      "}",
-      "",
-    );
-
-    // GET by ID handler
-    lines.push(
-      "/**",
-      ` * Handler for GET /api/${lowerName}/:id`,
-      " */",
-      `export async function get${pascalName}Handler(req: Request, res: Response): Promise<void> {`,
-      "  await sendResponse(",
-      "    req,",
-      "    res,",
-      `    () => validate${pascalName}Id(req.params),`,
-      `    (validData) => get${pascalName}(validData)`,
-      "  );",
-      "}",
-      "",
-    );
-  }
-
-  // POST create handler
-  if (methods.includes("POST")) {
-    lines.push(
-      "/**",
-      ` * Handler for POST /api/${lowerName}`,
-      " */",
-      `export async function create${pascalName}Handler(req: Request, res: Response): Promise<void> {`,
-      "  await sendResponse(",
-      "    req,",
-      "    res,",
-      `    () => validate${pascalName}Create(req.body),`,
-      `    (validData) => create${pascalName}(validData)`,
-      "  );",
-      "}",
-      "",
-    );
-  }
-
-  // PUT/PATCH update handler
-  if (methods.some((m) => ["PUT", "PATCH"].includes(m))) {
-    lines.push(
-      "/**",
-      ` * Handler for PUT/PATCH /api/${lowerName}/:id`,
-      " */",
-      `export async function update${pascalName}Handler(req: Request, res: Response): Promise<void> {`,
-      "  // First validate params",
-      `  const paramsResult = await validate${pascalName}Id(req.params);`,
-      "  if (!paramsResult.isValid) {",
-      "    res.status(422).json({",
-      "      success: false,",
-      "      message: 'Validation failed',",
-      "      error: 'VALIDATION_ERROR',",
-      "      details: paramsResult.errors",
-      "    });",
-      "    return;",
-      "  }",
-      "",
-      "  // Then validate body and execute",
-      "  await sendResponse(",
-      "    req,",
-      "    res,",
-      `    () => validate${pascalName}Update(req.body),`,
-      `    (validData) => update${pascalName}(paramsResult.data!, validData)`,
-      "  );",
-      "}",
-      "",
-    );
-  }
-
-  // DELETE handler
-  if (methods.includes("DELETE")) {
-    lines.push(
-      "/**",
-      ` * Handler for DELETE /api/${lowerName}/:id`,
-      " */",
-      `export async function delete${pascalName}Handler(req: Request, res: Response): Promise<void> {`,
-      "  await sendResponse(",
-      "    req,",
-      "    res,",
-      `    () => validate${pascalName}Id(req.params),`,
-      `    (validData) => delete${pascalName}(validData)`,
-      "  );",
-      "}",
-      "",
-    );
-  }
-
-  return lines.join("\n");
-}
-
-function generateRoutes(
-  pascalName: string,
-  camelName: string,
-  lowerName: string,
-  routePath: string,
-  methods: HttpMethod[],
-  addLimiter: boolean,
-  resource: ResourceNaming,
-): string {
-  const lines: string[] = ["import { Router } from 'express';"];
-
-  if (addLimiter) {
-    lines.push(
-      `import { createEndpointLimiter } from '${getMiddlewareImportPath(resource)}';`,
-    );
-  }
-
-  // Import handlers
-  const handlerImports: string[] = [];
-  if (methods.includes("GET"))
-    handlerImports.push(`list${pascalName}sHandler`, `get${pascalName}Handler`);
-  if (methods.includes("POST"))
-    handlerImports.push(`create${pascalName}Handler`);
-  if (methods.some((m) => ["PUT", "PATCH"].includes(m)))
-    handlerImports.push(`update${pascalName}Handler`);
-  if (methods.includes("DELETE"))
-    handlerImports.push(`delete${pascalName}Handler`);
-
-  lines.push(
-    `import { ${handlerImports.join(", ")} } from './${lowerName}.handler.js';`,
-  );
-
-  lines.push(
-    "",
-    "const router = Router();",
-    ...(addLimiter
-      ? [
-          "const endpointLimiter = createEndpointLimiter({ windowMs: 15 * 60 * 1000, max: 60 });",
-        ]
-      : []),
-    "",
-    "// ==================== ROUTES ====================",
-    "",
-  );
-
-  // GET routes
-  if (methods.includes("GET")) {
-    lines.push(
-      "/**",
-      ` * @route GET /api/${routePath}`,
-      ` * @desc List all ${lowerName}s`,
-      " */",
-      `router.get('/', ${addLimiter ? "endpointLimiter, " : ""}list${pascalName}sHandler);`,
-      "",
-      "/**",
-      ` * @route GET /api/${routePath}/:id`,
-      ` * @desc Get ${lowerName} by ID`,
-      " */",
-      `router.get('/:id', ${addLimiter ? "endpointLimiter, " : ""}get${pascalName}Handler);`,
-      "",
-    );
-  }
-
-  // POST route
-  if (methods.includes("POST")) {
-    lines.push(
-      "/**",
-      ` * @route POST /api/${routePath}`,
-      ` * @desc Create new ${lowerName}`,
-      " */",
-      `router.post('/', ${addLimiter ? "endpointLimiter, " : ""}create${pascalName}Handler);`,
-      "",
-    );
-  }
-
-  // PUT route
-  if (methods.includes("PUT")) {
-    lines.push(
-      "/**",
-      ` * @route PUT /api/${routePath}/:id`,
-      ` * @desc Update ${lowerName}`,
-      " */",
-      `router.put('/:id', ${addLimiter ? "endpointLimiter, " : ""}update${pascalName}Handler);`,
-      "",
-    );
-  }
-
-  // PATCH route
-  if (methods.includes("PATCH")) {
-    lines.push(
-      "/**",
-      ` * @route PATCH /api/${routePath}/:id`,
-      ` * @desc Partial update ${lowerName}`,
-      " */",
-      `router.patch('/:id', ${addLimiter ? "endpointLimiter, " : ""}update${pascalName}Handler);`,
-      "",
-    );
-  }
-
-  // DELETE route
-  if (methods.includes("DELETE")) {
-    lines.push(
-      "/**",
-      ` * @route DELETE /api/${routePath}/:id`,
-      ` * @desc Delete ${lowerName}`,
-      " */",
-      `router.delete('/:id', ${addLimiter ? "endpointLimiter, " : ""}delete${pascalName}Handler);`,
-      "",
-    );
-  }
-
-  lines.push("export default router;");
-
-  return lines.join("\n");
-}
-
-async function ensureRateLimitMiddlewareFile(): Promise<void> {
-  const middlewarePath = path.join(
-    process.cwd(),
-    "src",
-    "middleware",
-    "rate-limit.middleware.ts",
-  );
-
-  if (fileExists(middlewarePath)) {
-    return;
-  }
-
-  const middlewareContent = `import { rateLimit } from 'express-rate-limit';
-
-export interface EndpointLimiterOptions {
-  windowMs?: number;
-  max?: number;
-}
-
-export function createEndpointLimiter(options: EndpointLimiterOptions = {}) {
-  const windowMs = options.windowMs ?? 15 * 60 * 1000;
-  const max = options.max ?? 60;
-
-  return rateLimit({
-    windowMs,
-    max,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: {
-      success: false,
-      message: 'Too many requests, please try again later.',
-      error: 'RATE_LIMIT_EXCEEDED'
-    }
-  });
-}
-`;
-
-  await writeFile(middlewarePath, middlewareContent);
-}
-
-async function updateMainRouter(resource: ResourceNaming): Promise<void> {
-  const routerPath = path.join(process.cwd(), "src", "api", "routes.ts");
-
-  try {
-    let content = await fs.readFile(routerPath, "utf-8");
-
-    // Add import at the top (after other imports)
-    const importLine = `import ${resource.routerIdentifier} from '${resource.importPath}';`;
-    if (!content.includes(importLine)) {
-      // Find last import line
-      const importRegex = /^import\s+.+from\s+.+;$/gm;
-      let lastImportMatch: RegExpExecArray | null = null;
-      let match;
-      while ((match = importRegex.exec(content)) !== null) {
-        lastImportMatch = match;
-      }
-
-      if (lastImportMatch) {
-        const insertPos = lastImportMatch.index + lastImportMatch[0].length;
-        content =
-          content.slice(0, insertPos) +
-          "\n" +
-          importLine +
-          content.slice(insertPos);
-      }
-    }
-
-    // Add router.use() before export
-    const useLine = `router.use('/${resource.routePath}', ${resource.routerIdentifier});`;
-    if (!content.includes(useLine)) {
-      const exportIndex = content.indexOf("export default router");
-      if (exportIndex !== -1) {
-        content =
-          content.slice(0, exportIndex) +
-          useLine +
-          "\n\n" +
-          content.slice(exportIndex);
-      }
-    }
-
-    await fs.writeFile(routerPath, content, "utf-8");
-  } catch (err) {
-    // ENOENT (routes.ts doesn't exist) is expected and fine to ignore silently.
-    // Anything else (permission error, malformed file, etc.) previously failed
-    // the same way with zero visibility - the endpoint would be generated but
-    // never wired into the router, with no indication why.
-    if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
-      warning(
-        `Could not update src/api/routes.ts: ${err instanceof Error ? err.message : String(err)}\n` +
-          `You may need to add the route manually: import ${resource.routerIdentifier} from '${resource.importPath}';`,
-      );
-    }
-  }
-}
-
-export const __endpointTestUtils = {
-  resolveResourceNaming,
-  generateValidator,
-  generateController,
-  generateHandler,
-  generateRoutes,
-  getSharedImportPath,
-  getMiddlewareImportPath,
+const METHOD_ALIASES: Record<string, ResourceMethod> = {
+  list: "list",
+  index: "list",
+  get: "get",
+  read: "get",
+  show: "get",
+  create: "create",
+  post: "create",
+  update: "update",
+  patch: "update",
+  put: "update",
+  delete: "delete",
+  remove: "delete",
+  del: "delete",
 };
+
+export function parseMethods(value: string | undefined): Set<ResourceMethod> {
+  if (!value || value.trim() === "" || value.trim() === "all") return new Set(ALL_METHODS);
+  const methods = new Set<ResourceMethod>();
+  for (const raw of value.split(",").map((m) => m.trim().toLowerCase()).filter(Boolean)) {
+    const method = METHOD_ALIASES[raw];
+    if (!method) throw new Error(`Unknown method "${raw}". Use: list, get, create, update, delete`);
+    methods.add(method);
+  }
+  if (methods.size === 0) throw new Error("--methods needs at least one of: list, get, create, update, delete");
+  return methods;
+}
+
+export function parseIdType(value: string | undefined): IdType {
+  const id = (value ?? "uuid").toLowerCase();
+  if (id === "uuid" || id === "number" || id === "string") return id;
+  if (id === "int" || id === "integer" || id === "serial") return "number";
+  throw new Error(`Unknown --id "${value}". Use uuid (default), number or string`);
+}
+
+async function promptFields(reserved: string[]): Promise<FieldSpec[]> {
+  info("Define the fields (press Enter on an empty name to finish).");
+  gray(`  Types: ${FIELD_TYPES.filter((t) => t !== "enum").join(", ")}, enum(a|b)\n`);
+  const fields: FieldSpec[] = [];
+  for (;;) {
+    const { name } = await inquirer.prompt<{ name: string }>([
+      {
+        type: "input",
+        name: "name",
+        message: "Field name (snake_case):",
+        validate: (input: string) => {
+          if (!input.trim()) return true;
+          try {
+            validateFieldName(input.trim(), new Set(["id", "user_id", "created_at", "updated_at", ...reserved]));
+            if (fields.some((f) => f.name === input.trim())) return "Already added";
+            return true;
+          } catch (e) {
+            return e instanceof Error ? e.message : String(e);
+          }
+        },
+      },
+    ]);
+    if (!name.trim()) break;
+
+    const { type, optional } = await inquirer.prompt<{ type: string; optional: boolean }>([
+      {
+        type: "input",
+        name: "type",
+        message: `Type for "${name.trim()}":`,
+        default: "string",
+        validate: (input: string) => {
+          try {
+            parseFieldType(input);
+            return true;
+          } catch (e) {
+            return e instanceof Error ? e.message : String(e);
+          }
+        },
+      },
+      { type: "confirm", name: "optional", message: "Optional (can be omitted / null)?", default: false },
+    ]);
+    const parsed = parseFieldType(type);
+    fields.push({ name: name.trim(), type: parsed.type, optional, ...(parsed.enumValues ? { enumValues: parsed.enumValues } : {}) });
+  }
+  return fields;
+}
+
+function readPackageJson(cwd: string): Record<string, any> | null {
+  const file = path.join(cwd, "package.json");
+  if (!fs.existsSync(file)) return null;
+  return JSON.parse(fs.readFileSync(file, "utf-8"));
+}
+
+function relative(cwd: string, file: string): string {
+  return path.relative(cwd, file).split(path.sep).join("/");
+}
+
+export interface ResourcePlan {
+  naming: ResourceNaming;
+  context: ResourceContext;
+  files: PlannedFile[];
+  warnings: string[];
+  migration?: PlannedFile;
+}
+
+/** Builds every file change for a resource without touching the disk. */
+export function planResource(cwd: string, naming: ResourceNaming, context: ResourceContext, force = false): ResourcePlan {
+  const warnings: string[] = [];
+  const files: PlannedFile[] = [];
+  const base = naming.fileBase;
+
+  const typesContent = context.withRepository
+    ? renderTypes(context)
+    : // Without a table there is no row type: the view is yours to define.
+      `/** What the API returns for a ${naming.singular.words}. */\nexport interface ${naming.singular.pascal}View {\n  id: ${context.idType === "number" ? "number" : "string"};\n}\n`;
+
+  const resourceFiles: Array<[string, string]> = [
+    [`${base}.validator.ts`, renderValidator(context)],
+    [`${base}.types.ts`, typesContent],
+    ...(context.withRepository ? ([[`${base}.repository.ts`, renderRepository(context)]] as Array<[string, string]>) : []),
+    [`${base}.controller.ts`, renderController(context)],
+    [`${base}.handler.ts`, renderHandler(context)],
+    [`${base}.routes.ts`, renderRoutes(context)],
+  ];
+
+  for (const [name, content] of resourceFiles) {
+    const file = path.join(naming.dir, name);
+    const exists = fs.existsSync(file);
+    if (exists && !force) {
+      throw new Error(`${relative(cwd, file)} already exists. Use --force to overwrite it.`);
+    }
+    files.push({ path: file, content, action: exists ? "overwrite" : "create" });
+  }
+
+  files.push(...planMissingSharedFiles(cwd));
+
+  if (!context.isPublic && !fs.existsSync(path.join(cwd, "src", "middleware", "auth.middleware.ts"))) {
+    if (!fs.existsSync(path.join(cwd, "src", "shared", "jwt.utils.ts"))) {
+      throw new Error(
+        "This project has no auth (src/shared/jwt.utils.ts not found), so private endpoints can't be protected. " +
+          "Use --public, or create the project with JWT authentication.",
+      );
+    }
+    files.push({
+      path: path.join(cwd, "src", "middleware", "auth.middleware.ts"),
+      content: readProjectTemplate("middleware/auth.middleware.ts"),
+      action: "create",
+    });
+  }
+
+  if (context.withRepository) {
+    const rowType = planRowType(cwd, `${naming.singular.pascal}Row`, renderRowType(context));
+    if ("skipped" in rowType) warnings.push(rowType.skipped);
+    else files.push(rowType);
+  }
+
+  const routes = planRoutesRegistration(cwd, naming, context.isPublic);
+  warnings.push(...routes.warnings);
+  if (routes.file) files.push(routes.file);
+
+  const missingExports = missingApiUtilsExports(cwd);
+  if (missingExports.length > 0) {
+    warnings.push(
+      `src/shared/api.utils.ts is missing ${missingExports.join(", ")} (older template). ` +
+        "Update it from a new project (katax init) or the generated code won't compile.",
+    );
+  }
+
+  const migration = context.withRepository ? planMigration(cwd, naming.table, renderMigration(context)) : undefined;
+  if (migration) files.push(migration);
+
+  return { naming, context, files, warnings, migration };
+}
+
+const RUNTIME_DEPENDENCIES: Array<{ name: string; dev?: boolean; when: (ctx: ResourceContext) => boolean }> = [
+  { name: "katax-core", when: () => true },
+  { name: "katax-service-manager", when: () => true },
+  { name: "swagger-ui-express", when: () => true },
+  { name: "@types/swagger-ui-express", dev: true, when: () => true },
+  { name: "pg", when: (ctx) => ctx.withRepository },
+  { name: "@types/pg", dev: true, when: (ctx) => ctx.withRepository },
+];
+
+export async function addEndpointCommand(input: string, options: AddEndpointOptions = {}): Promise<void> {
+  const cwd = process.cwd();
+  try {
+    const pkg = readPackageJson(cwd);
+    if (!pkg) throw new Error("No package.json here. Run this command from your project root.");
+
+    const naming = resolveResourceNaming(input, { singular: options.singular, table: options.table, cwd });
+    const methods = parseMethods(options.methods);
+    const idType = parseIdType(options.id);
+    const isPublic = Boolean(options.public);
+    const withRepository = options.repository !== false;
+    const needsFields = methods.has("create") || methods.has("update");
+    const reserved = naming.parents.map((p) => p.column);
+
+    title(`🎯 katax add endpoint ${input}`);
+
+    let fields: FieldSpec[] = [];
+    if (options.fields !== undefined) {
+      fields = parseFieldsSpec(options.fields, reserved);
+    } else if (needsFields && options.interactive !== false && process.stdin.isTTY) {
+      fields = await promptFields(reserved);
+    }
+    if (fields.length === 0 && needsFields) {
+      fields = [{ name: "name", type: "string", optional: false }];
+      info('No fields given: using "name:string". Pass --fields "name:string, price:number?" to choose.');
+    }
+
+    const parentIdTypes: Record<string, IdType> = {};
+    for (const parent of naming.parents) {
+      const detected = detectRowIdType(cwd, `${parent.pascal}Row`);
+      if (detected) parentIdTypes[parent.param] = detected;
+    }
+
+    const context: ResourceContext = { naming, fields, methods, idType, isPublic, withRepository, parentIdTypes };
+    const plan = planResource(cwd, naming, context, Boolean(options.force));
+
+    console.log("");
+    for (const file of plan.files) {
+      const verb = file.action === "create" ? "CREATE" : file.action === "update" ? "UPDATE" : "OVERWRITE";
+      gray(`  ${verb.padEnd(9)} ${relative(cwd, file.path)}`);
+    }
+
+    if (options.dryRun) {
+      console.log("");
+      info("Dry run: nothing was written.");
+      for (const w of plan.warnings) warning(w);
+      return;
+    }
+
+    for (const file of plan.files) {
+      fs.mkdirSync(path.dirname(file.path), { recursive: true });
+      fs.writeFileSync(file.path, file.content, "utf-8");
+    }
+
+    console.log("");
+    success(`${naming.plural.pascal} endpoint created`);
+    const api = `/api/${naming.mountPath}`;
+    const routes: string[] = [];
+    if (methods.has("list")) routes.push(`GET    ${api}`);
+    if (methods.has("create")) routes.push(`POST   ${api}`);
+    if (methods.has("get")) routes.push(`GET    ${api}/:id`);
+    if (methods.has("update")) routes.push(`PATCH  ${api}/:id`);
+    if (methods.has("delete")) routes.push(`DELETE ${api}/:id`);
+    for (const r of routes) gray(`  ${r}${isPublic ? "" : "  🔒"}`);
+
+    for (const w of plan.warnings) warning(w);
+
+    const deps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+    const missing = RUNTIME_DEPENDENCIES.filter((d) => d.when(context) && !deps[d.name]);
+    const runtime = missing.filter((d) => !d.dev).map((d) => d.name);
+    const dev = missing.filter((d) => d.dev).map((d) => d.name);
+    if (runtime.length > 0 || dev.length > 0) {
+      warning("Missing dependencies:");
+      if (runtime.length > 0) gray(`  npm install ${runtime.join(" ")}`);
+      if (dev.length > 0) gray(`  npm install -D ${dev.join(" ")}`);
+    }
+
+    console.log("");
+    info("Next steps:");
+    let step = 1;
+    if (plan.migration) gray(`  ${step++}. Review and run ${relative(cwd, plan.migration.path)} on your database`);
+    gray(`  ${step++}. Adjust the .describe() texts and rules in ${naming.fileBase}.validator.ts`);
+    gray(`  ${step++}. npx tsc --noEmit`);
+    console.log("");
+
+    await checkAndNotifyProjectDependencyUpdates(cwd);
+  } catch (e) {
+    error(e instanceof Error ? e.message : String(e));
+    process.exitCode = 1;
+  }
+}

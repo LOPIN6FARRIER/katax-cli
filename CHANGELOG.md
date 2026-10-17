@@ -1,15 +1,35 @@
 # Changelog - Katax CLI
 
-## [1.6.2]
+## [1.7.0] - 2026-10-17
 
-Current version (see `package.json`). Entries between 1.4.3 and 1.6.2 were not individually tracked in this file; README.md has the current, verified command reference (`init`, `add endpoint`, `generate crud/repository/docs`, `deploy init/update/rollback/logs/status`, `fix docs/all/list`, `info`).
+### Changed
+- **`katax add endpoint <path>`** rewritten (and `generate crud` is now an alias). Not interactive by default:
+  `--methods`, `--id uuid|number|string` (uuid default), `--fields "name:type, other:type?"`, `--table`,
+  `--singular`, `--public`, `--no-repository`, `--dry-run`, `--force`. Generates the six house-style files
+  (validator, types, repository, controller, handler, routes) wired together, the row type in
+  `types/db.types.ts`, the mount in `api/routes.ts` (after `requireAuth`) and a migration.
+- Naming: functions use the singular of the last segment (`listHabits`, `getHabit`); fixes `listProductss`,
+  plural `getProducts` and prefixed names (`listAdminUserRoless`).
+- Sub-resources: `habits/:habitId/reminders` (mergeParams, parent ownership check, FK in the migration).
+- Query params use `k.coerce` (list `page`/`limit` were `k.number()` and rejected every request); `date` fields
+  are `YYYY-MM-DD` strings; optional fields are `.nullish()` with a `*_CLEARABLE` list for updates.
+- **`katax init`**: always katax-core + katax-service-manager (singleton) + OpenAPI docs; database is
+  PostgreSQL or none (+ Redis); new prompt to print the endpoint map at startup; `--no-install`. Generates the
+  shared utilities (`api.utils` with the public error contract, `errors.utils`, `null.utils`, `validation.utils`,
+  `pagination.utils`, `db.ts`, `openapi.utils`, `route-map.utils`, `startup-routes.utils`, `async-errors`),
+  `requireAuth`/`requireRole`, a JSON-safe error middleware and `/api` 404.
+- OpenAPI 3.1 is built at runtime from the routes (`docs()` metadata) and katax-core `toJsonSchema()`.
+- `.env.example` has placeholders only (real secrets stay in `.env`); `bcryptjs ^3`; no fallback JWT secrets;
+  `index.ts` loads `.env` before building the logger config (LOG_LEVEL from `.env` was ignored).
+- `katax deploy init` writes `.katax-deploy.json` after cloning (the clone failed before).
 
-Current behavior worth knowing (not dated to a specific release):
-- Generated projects pin `katax-core ^1.6.5` and `katax-service-manager ^0.6.0`, and the CLI reports newer releases of katax-cli, katax-core and katax-service-manager (cached for a day).
-- Resource names are validated (`[a-z0-9_-]` per segment) so `add endpoint` / `generate crud` / `generate repository` cannot write outside `src/api/`.
-- `generate crud` only wires `authenticateToken` when `src/shared/jwt.utils.ts` exists.
-- `katax generate repository` generates a katax-service-manager data-access class.
-- JWT projects use `bcryptjs` instead of `bcrypt` (no native build step).
+### Removed
+- `katax generate repository`, `katax generate docs`, `katax fix docs|all|list`, the `/hello` example,
+  MySQL/MongoDB in `init`, "manual" and "instance" katax modes, static `openapi.json`, EJS and dead generator code.
+
+## [1.5.2] - 2026-08-06
+
+Current published version. Entries between 1.4.3 and 1.5.2 were not individually tracked in this file — see README.md for the current, accurate command reference (`init`, `add endpoint`, `generate crud/repository/docs`, `deploy init/update/rollback/logs/status`, `fix docs/all/list`, `info`).
 
 ## [1.4.2] - 2026-04-02
 

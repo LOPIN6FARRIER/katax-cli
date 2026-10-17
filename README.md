@@ -3,9 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/katax-cli.svg)](https://www.npmjs.com/package/katax-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-CLI tool to generate Express REST APIs with TypeScript, [katax-core](https://github.com/LOPIN6FARRIER/katax-core) validation and (optionally) [katax-service-manager](https://github.com/LOPIN6FARRIER/katax-service-manager).
-
-**Version**: 1.6.2 | **Node**: >= 18
+CLI tool to generate Express REST APIs with TypeScript and [katax-core](https://github.com/LOPIN6FARRIER/katax-core) validation.
 
 ## Installation
 
@@ -31,355 +29,213 @@ Compatible with Claude Code, Cursor, Windsurf, GitHub Copilot, and other AI codi
 ## Quick Start
 
 ```bash
-# Create a new project (interactive, installs dependencies)
-katax init my-api
-cd my-api
-npm run dev
+katax init my-api                      # Express + TypeScript + katax-core + katax-service-manager
+cd my-api && pnpm dev                  # prints the endpoint map; docs at /docs
 
-# Add an endpoint
-katax add endpoint users
-
-# Generate a CRUD resource
-katax generate crud products
-
-# View project info, routes and available updates
-katax info
+katax add endpoint habits --fields "name:string, note:text?, starts_on:date"
+katax add endpoint habits/:habitId/reminders --fields "remind_at:string"
+katax add endpoint news --public --methods list,get
 ```
-
-All generator commands are **interactive** (they ask questions with prompts). Run them from the project root.
 
 ## Commands
 
-| Command | Aliases | What it does |
-|---|---|---|
-| `katax init [name]` | | Create a new project |
-| `katax add endpoint <name>` | | Add one resource with the HTTP methods you choose |
-| `katax generate crud <name>` | `gen`, `g` | Add a CRUD resource (list, get, create, update, delete) |
-| `katax generate repository <name>` | `gen`, `g` | Add a data-access class backed by katax-service-manager |
-| `katax generate docs` | `gen`, `g` | Generate `src/openapi.json` + Swagger UI setup |
-| `katax info` | `status`, `ls` | Show project info, routes and available updates |
-| `katax deploy init/update/rollback/logs/status` | | PM2 deployment on an Ubuntu VPS |
-| `katax fix docs/all/list` | | Patch existing projects |
-
 ### `katax init [project-name]`
 
-Initialize a new Express API project with TypeScript and install its dependencies.
+Creates the project and installs dependencies. Options: `-f/--force`, `--pm npm|pnpm`, `--ignore-scripts`,
+`--write-npmrc`, `--no-install`.
 
-**Options:**
-- `-f, --force` - Allow using an existing directory (files are overwritten, not deleted)
-- `--pm <npm|pnpm>` - Default answer for the package-manager prompt (default: `pnpm`)
-- `--ignore-scripts` - Default answer for "install with `--ignore-scripts`"
-- `--write-npmrc` - Default answer for "write `.npmrc` with `ignore-scripts=true`"
+Prompts: description, database (PostgreSQL or none), Redis, authentication (JWT or none), WebSocket (same port
+or a separate one), Katax registry, lifecycle hooks, **print the endpoint map at startup**, port, git, package
+manager.
 
-The project name may only contain letters, numbers, `-` and `_`.
+Always included (no prompt): katax-core validation, katax-service-manager (singleton), OpenAPI 3.1 docs at
+`/docs`, the shared utilities every resource uses, and the public error contract.
 
-**Prompts:** description, database (PostgreSQL / MySQL / MongoDB / none) and its credentials, authentication (JWT / none), katax-core validation, Swagger/OpenAPI, katax-service-manager (if enabled: singleton or instance mode, registry by URL or callback, lifecycle hooks, Redis cache + credentials, WebSocket on a shared or separate port, peer dependencies to install), server port, git init, package manager, ignore scripts, auto-generated JWT secrets.
+- `.env` gets real values (generated JWT secrets); `.env.example` only placeholders (commit this one).
+- `index.ts` loads `.env` first (`import 'dotenv/config'`), connects PostgreSQL/Redis/Socket.IO as chosen and,
+  if you said yes, prints the endpoint map with `printStartupRoutes()` (otherwise the helper is generated but
+  not called).
+- `app.ts`: async-errors patch, `trust proxy`, Helmet, CORS from `ALLOWED_ORIGINS`, `/api` rate limit,
+  `mountApiDocs()`, `/api` 404 and the error middleware.
+- `api/routes.ts`: public routes, then `router.use(requireAuth)` (JWT projects); private routers go after it.
 
-Generated projects pin the versions this CLI was tested with: `katax-core ^1.6.5` and `katax-service-manager ^0.6.0`. After creating the project the CLI tells you if newer versions are available.
+### `katax add endpoint <path>`
 
-```bash
-katax init my-awesome-api
-katax init my-awesome-api --pm npm --ignore-scripts --write-npmrc
-```
-
-### `katax add endpoint <name>`
-
-Add a resource with validator, controller, handler and routes. Requires `katax-core` (offers to install it if missing).
-
-**Prompts:** HTTP methods (all, or pick GET/POST/PUT/PATCH/DELETE), per-route rate limiter, and the body fields for POST/PUT/PATCH (name, type, required).
-
-Generates `src/api/<name>/<name>.{validator,controller,handler,routes}.ts`, registers the router in `src/api/routes.ts` and regenerates `src/openapi.json`. Nested names create nested folders and routes: `admin/users` → `src/api/admin/users/` mounted at `/api/admin/users`. Names may only contain letters, numbers, `-`, `_` and `/`.
+Alias: `katax generate crud <path>` (`katax g crud`). Not interactive unless `--fields` is missing and you are
+in a terminal.
 
 ```bash
-katax add endpoint users
-katax add endpoint admin/users
+katax add endpoint habits                                   # /api/habits
+katax add endpoint admin/users --id number                  # /api/admin/users
+katax add endpoint habits/:habitId/reminders                # sub-resource (mergeParams)
+katax add endpoint products --fields "name:string, price:number?, status:enum(draft|active)" --methods list,get,create
+katax add endpoint health-check --public --no-repository --dry-run
 ```
 
-> `-m, --method` and `-p, --path` are accepted but currently ignored: methods are chosen in the prompt and the route path comes from the name.
+**Naming.** The last segment is the resource in plural; the singular is computed (`habits` → `listHabits`,
+`getHabit`, `createHabit`, `updateHabit`, `deleteHabit`, `HabitRow`, `habitsRouter`). The prefix (`admin/`) only
+changes the folder and URL. Fix a wrong singular with `--singular`.
 
-### `katax generate crud <resource-name>`
+| Option | Default | |
+|---|---|---|
+| `--methods <list>` | `list,get,create,update,delete` | `update` is PATCH |
+| `--id <type>` | `uuid` | `uuid`, `number` (coerced from the URL) or `string` |
+| `--fields <spec>` | asks (TTY) or `name:string` | `name:type`, `?` = optional (`.nullish()`, nullable column, clearable on update) |
+| `--table <name>` | snake_case of the resource | SQL table |
+| `--singular <name>` | computed | e.g. `--singular person` |
+| `--public` | private | mounted before `requireAuth`; no `userId`, no ownership checks |
+| `--no-repository` | | no repository/table; controllers return 501 until you implement them |
+| `--no-interactive` | | never prompt |
+| `-d, --dry-run` | | print what would change |
+| `-f, --force` | | overwrite existing resource files |
 
-Same files as `add endpoint`, with the CRUD routes you select:
+Field types: `string`, `text`, `int`, `number`, `boolean`, `date` (`YYYY-MM-DD` string), `datetime`, `email`,
+`uuid`, `enum(a|b)`.
 
-| Route | Action |
-|---|---|
-| `GET /api/<name>` | list (query: `page`, `limit`, `search`) |
-| `GET /api/<name>/:id` | get by id |
-| `POST /api/<name>` | create |
-| `PUT` / `PATCH /api/<name>/:id` | update |
-| `DELETE /api/<name>/:id` | delete |
+**What it writes**
 
-**Options:**
-- `--no-auth` - Default answer "no" for the authentication prompt
-
-Authentication uses `authenticateToken` from `src/shared/jwt.utils.ts`, which exists only if the project was created with JWT. Without it, the routes are generated without authentication and the CLI warns you.
-
-The generated controllers return **sample data with `TODO` comments**: connect them to your database (for example with `katax generate repository`).
-
-```bash
-katax generate crud products
-katax g crud admin/products --no-auth
+```
+src/api/<path>/
+├── <r>.validator.ts    # schemas with .describe(), k.coerce query, .nullish() + *_CLEARABLE, inferred types, validate*
+├── <r>.types.ts        # view, list result, repository params and filters
+├── <r>.repository.ts   # the only file with SQL: column list, ::text dates, only-defined-keys UPDATE
+├── <r>.controller.ts   # (userId, input) -> ControllerResult; ownership check (404), toSafeErrorResult
+├── <r>.handler.ts      # one sendResponse() per route
+└── <r>.routes.ts       # routes with docs({ summary, params, query, body }) for OpenAPI
+src/types/db.types.ts   # + <Singular>Row
+src/api/routes.ts       # import + mount (after requireAuth, or before it with --public)
+migrations/NNNN_create_<table>.sql
 ```
 
-### `katax generate repository <name>`
+Sub-resources (`habits/:habitId/reminders`) validate the parent id, check that the parent belongs to the user,
+use `Router({ mergeParams: true })` and reference the parent table in the migration (the parent's id type is
+read from its row type). Missing shared files (`api.utils`, `errors.utils`, `null.utils`, `db.ts`,
+`openapi.utils`...) and `auth.middleware.ts` are created; existing ones are never overwritten.
 
-Generate `src/api/<name>/<name>.repository.ts`, a class that uses a connection created with `katax.database()` (katax-service-manager).
-
-**Prompts:** database type (detected from `package.json`), id type (`string` / `number`), katax connection name (default `main`), table or collection name.
-
-Methods: `findAll()`, `findById()`, `exists()`, `create()`, `update()`, `delete()` (parameterized SQL for PostgreSQL/MySQL, driver calls for MongoDB).
-
-```bash
-katax generate repository products
-```
-
-### `katax generate docs`
-
-Scan `src/api/` and write an OpenAPI **3.0** spec to `src/openapi.json`, plus `src/config/swagger.config.ts` (Swagger UI at `/docs` and `/api-docs`, raw spec at `/openapi.json`). `add endpoint` and `generate crud` already regenerate the spec automatically.
-
-**Options:**
-- `-f, --force` - Overwrite an existing Swagger setup
-- `-o, --output <path>` - Output path (default: `src/openapi.json`)
-- `-p, --port <port>` - Port for the local server URL (default: `PORT` from `.env`, then `3000`)
-- `-u, --url <url>` - Production server URL (default: `API_URL` or `PRODUCTION_URL` from `.env`)
-
-Request schemas are read from the `katax-core` validators by static analysis, so they include field types and basic rules (`min`, `max`, `minLength`, `maxLength`). Route descriptions come from the `@desc` comments in `*.routes.ts`.
-
-```bash
-katax generate docs
-katax generate docs -f -p 4000 -u https://api.example.com
-```
-
-> **Production:** the default `build` script (`tsc`) does not copy `src/openapi.json` to `dist/`, so `/docs` is empty in production. Run `katax fix docs` once in the project to add the copy step.
+The generated SQL targets PostgreSQL.
 
 ### `katax info`
 
-Show the project name and version, the installed `katax-core` / `katax-service-manager` versions (and whether updates exist), and the routes found in `src/api/`.
+Aliases: `status`, `ls`
 
-### `katax deploy ...`
+Show project structure, dependencies, and routes.
 
-Deploy and manage the API with [PM2](https://pm2.keymetrics.io/) on an Ubuntu VPS. Requires PM2 installed globally (`npm install -g pm2`). The app name is stored in `.katax-deploy.json`; `-a, --app-name` overrides it.
+**Example:**
+```bash
+katax info
+```
 
-| Command | What it does | Options |
-|---|---|---|
-| `katax deploy init` | Asks for app name, repo URL (HTTPS/SSH), branch, install path, instances, max memory and env vars; clones, runs `npm install`, builds, writes `ecosystem.config.cjs` and starts with PM2 | |
-| `katax deploy update` | `git fetch` + `pull` (or `reset --hard` with `--hard`), `npm install`, build, `pm2 restart` | `-b, --branch`, `--hard`, `-a, --app-name` |
-| `katax deploy rollback` | `git reset --hard HEAD~N`, reinstall, rebuild, restart | `-c, --commits <n>` (default 1), `-a` |
-| `katax deploy logs` | `pm2 logs` | `-l, --lines <n>`, `-f, --follow`, `-a` |
-| `katax deploy status` | `pm2 list` | |
 
-Run `update`, `rollback` and `logs` from inside the deployed project folder.
+### `katax deploy init`
 
-- Environment variables entered in `deploy init` are written to `ecosystem.config.cjs` (`env_production`) in the deployed folder.
-- `deploy init` defaults to cluster mode with `max` instances. With WebSockets (Socket.IO needs sticky sessions) or the in-memory rate limiter, choose `1 instance`.
+Initial PM2 deployment to Ubuntu VPS.
 
+Interactive prompts: app name, repo (HTTPS/SSH), repo URL, branch, install path, instances, max memory, environment variables.
+
+Clones repo, installs deps, builds, creates PM2 ecosystem config, starts with PM2.
+
+**Example:**
 ```bash
 katax deploy init
+```
+
+### `katax deploy update`
+
+Pull changes and restart.
+
+**Options:**
+- `-b, --branch <branch>` - Branch to deploy
+- `--hard` - Hard reset (discard local changes)
+- `-a, --app-name <name>` - PM2 app name
+
+**Example:**
+```bash
+katax deploy update
 katax deploy update --hard -b main
-katax deploy logs -f
+```
+
+### `katax deploy rollback`
+
+Rollback to previous version.
+
+**Options:**
+- `-c, --commits <number>` - Number of commits (default: 1)
+- `-a, --app-name <name>` - PM2 app name
+
+**Example:**
+```bash
 katax deploy rollback -c 2
 ```
 
-### `katax fix ...`
+### `katax deploy logs`
 
-| Command | What it does |
-|---|---|
-| `katax fix docs` | Makes `npm run build` copy `src/openapi.json` to `dist/` (adds `copyfiles`) so `/docs` works in production |
-| `katax fix all` | Applies every available fix |
-| `katax fix list` | Lists available fixes |
+View PM2 logs.
 
-`--skip-install` skips the `npm install` after patching.
+**Options:**
+- `-l, --lines <number>` - Number of lines
+- `-f, --follow` - Follow mode
+- `-a, --app-name <name>` - PM2 app name
+
+**Example:**
+```bash
+katax deploy logs -f
+```
+
+### `katax deploy status`
+
+Show PM2 apps status.
+
+**Example:**
+```bash
+katax deploy status
+```
+
+## API docs (OpenAPI 3.1)
+
+There is no generation step. Each route declares its docs next to the handler:
+
+```ts
+router.post('/', docs({ summary: 'Create a habit', body: createHabitSchema }), createHabitHandler);
+```
+
+At runtime `mountApiDocs()` walks the router (the same walker that prints the endpoint map), turns the
+katax-core schemas into JSON Schema with `toJsonSchema()` and serves `/openapi.json` + Swagger UI at `/docs`.
+Private routes (after `requireAuth`) get `bearerAuth`; error responses follow the public error contract.
+
+## Errors
+
+Every error response has the same shape (`shared/errors.utils.ts`):
+
+```json
+{ "success": false, "message": "Status must be one of: draft, active, done.", "error": "VALIDATION_ERROR",
+  "details": [{ "field": "status", "message": "Status must be one of: draft, active, done." }] }
+```
+
+Controllers `throw notFoundError('Habit')` / `conflictError(...)` for expected errors and end with
+`catch (error) { return toSafeErrorResult(error, { context }) }`: database errors and bugs are logged and the
+client gets a generic 500. A validator that fails (DB down) answers 500, not 422.
+
+## Upgrading from 1.6
+
+- `katax generate repository`, `katax generate docs` and `katax fix` were removed (repositories come with
+  `add endpoint`; docs are built at runtime).
+- `add endpoint` / `generate crud` no longer prompt for methods and auth: use the options above.
+- Older projects: `add endpoint` creates the missing shared files, but an old `shared/api.utils.ts` must be
+  updated by hand (it warns which exports are missing: `toSafeErrorResult`, `validateComposed`).
 
 ## Global Options
 
 - `--no-color` - Disable colored output
-- `--verbose` - Enable verbose logging
+- `--verbose` - Verbose logging
 - `-v, --version` - Show version
 
-## Generated Project
-
-```
-my-api/
-├── src/
-│   ├── index.ts                  # Entry point (katax.init() or dotenv + app.listen)
-│   ├── app.ts                    # Express: helmet, cors, cookie-parser, rate limit, 1mb JSON limit
-│   ├── api/
-│   │   ├── routes.ts             # Main router, mounted at /api
-│   │   ├── health/health.handler.ts   # GET /api/health
-│   │   └── hello/                # Example endpoint: GET /api/hello?name=
-│   ├── config/
-│   │   ├── cors.config.ts        # ALLOWED_ORIGINS
-│   │   ├── env.validator.ts
-│   │   ├── swagger.config.ts     # If Swagger enabled
-│   │   └── katax.instance.ts     # If katax-service-manager in "instance" mode
-│   ├── middleware/
-│   │   ├── error.middleware.ts
-│   │   ├── logger.middleware.ts
-│   │   ├── api-key.middleware.ts
-│   │   └── rate-limit.middleware.ts   # Added when you enable a per-route limiter
-│   ├── shared/
-│   │   ├── api.utils.ts          # If katax-core: responses, validation, cookies
-│   │   ├── stream.utils.ts       # SSE and streaming helpers
-│   │   ├── auth.utils.ts         # If JWT: hashing, tokens, crypto helpers
-│   │   ├── jwt.utils.ts          # If JWT: tokens + authenticateToken / requireRole middleware
-│   │   └── logger.utils.ts       # Pino logger (only without katax-service-manager)
-│   ├── database/connection.ts    # Only with a database and without katax-service-manager
-│   └── openapi.json              # If Swagger enabled
-├── ecosystem.config.cjs          # PM2
-├── .env / .env.example
-├── .gitignore / .gitattributes   # LF line endings for Linux deploys
-├── package.json / tsconfig.json
-└── README.md
-```
-
-With katax-service-manager, the logger and the database, Redis and WebSocket connections are created in `src/index.ts` through `katax` instead of `logger.utils.ts` / `database/connection.ts`.
-
-> Review `.env.example` before committing: it is generated with the same values as `.env`, including database passwords and generated JWT secrets.
-
-### Files for each endpoint
-
-```
-src/api/<name>/
-├── <name>.validator.ts     # katax-core schemas + validate* functions
-├── <name>.controller.ts    # Business logic (returns ControllerResult)
-├── <name>.handler.ts       # Express handlers (sendResponse)
-├── <name>.routes.ts        # Express router
-└── <name>.repository.ts    # Only with `katax generate repository`
-```
-
-## Shared Utilities
-
-### `shared/api.utils.ts`
-
-```typescript
-interface ControllerResult<T = any> {
-  success: boolean;
-  message: string;
-  data?: T;
-  error?: string;
-  details?: unknown;
-  statusCode?: number;
-  cookies?: ResponseCookie[];
-  // pagination (copied to the response when present)
-  currentPage?: number; totalPages?: number; totalItems?: number; totalCount?: number; hasMorePages?: boolean;
-}
-
-createResponse.success(message, data?, statusCode = 200, pagination?, cookies?)
-createResponse.error(message, error?, statusCode?, details?)
-createResponse.unauthorized(...), createResponse.forbidden(...)
-createResponse.validation(errors, message?)
-createResponse.custom(result)
-createSuccessResult(...), createErrorResult(...)
-
-validateSchema<T>(schema, data): Promise<ValidationResult<T>>   // works with sync and async schemas
-sendResponse(req, res, validator, controller, options?)          // validate -> controller -> JSON response
-setCookie(res, name, value, options?), clearCookie(res, name, options?)
-```
-
-Responses have the shape `{ success, message, error?, data?, ...pagination }`. Validation errors return **422** with a list of `{ field, message }`.
-
-### `shared/stream.utils.ts`
-
-```typescript
-initSSE(res)
-sendSSEEvent(res, event, data)
-sendSSEComment(res, comment = 'ping')
-closeSSE(res)
-
-class SSEStream {             // keep-alive and cleanup when the client disconnects
-  constructor(res, ...)
-  send(data, event?, id?)
-  sendError(error)
-  close()
-  isClosed()
-}
-
-sendChunked(res, data)
-streamAsyncIterator(res, iterable, event?)
-streamArray(res, array, event?)
-```
-
-### `shared/jwt.utils.ts` (JWT enabled)
-
-- `generateAccessToken(payload)` / `generateRefreshToken(payload)` / `generateTokens(payload)` - use `JWT_SECRET`, `JWT_REFRESH_SECRET`, `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`
-- `verifyAccessToken(token)` / `verifyRefreshToken(token)` - payload or `null`
-- `decodeToken(token)` - decode without verifying
-- `authenticateToken` - Express middleware (`Authorization: Bearer <token>`)
-- `requireRole(...roles)` - Express middleware
-
-### `shared/auth.utils.ts` (JWT enabled)
-
-- `hashPassword(password, saltRounds = 12)` / `verifyPassword(password, hash)` - bcryptjs
-- `hashPasswordArgon2(password)` / `verifyPasswordArgon2(password, hash)` - requires `npm install argon2`
-- `generateToken(payload, secret, options?)`, `verifyToken<T>(token, secret)`, `decodeToken<T>(token)`, `generateRefreshToken(payload, secret, expiresIn = '30d')`
-- `generateRandomToken(length?)`, `generateNumericCode(digits?)`
-- `sha256(data)`, `md5(data)`
-- `encrypt(text, secretKey)` / `decrypt(encryptedData, secretKey)` - AES-256-GCM
-- `secureCompare(a, b)` - constant-time comparison
-
-## Generated Code Examples
-
-### Validator
-
-```typescript
-import { k, kataxInfer } from 'katax-core';
-import { validateSchema, ValidationResult } from '../../shared/api.utils.js';
-
-export const createProductsSchema = k.object({
-  title: k.string().minLength(2),
-  price: k.number().optional(),
-  email: k.string().email()
-});
-
-export type CreateProductsData = kataxInfer<typeof createProductsSchema>;
-
-export async function validateProductsCreate(data: unknown): Promise<ValidationResult<CreateProductsData>> {
-  return validateSchema(createProductsSchema, data);
-}
-```
-
-### Handler
-
-```typescript
-import { Request, Response } from 'express';
-import { sendResponse } from '../../shared/api.utils.js';
-import { createProducts } from './products.controller.js';
-import { validateProductsCreate } from './products.validator.js';
-
-export async function createProductsHandler(req: Request, res: Response): Promise<void> {
-  await sendResponse(
-    req,
-    res,
-    () => validateProductsCreate(req.body),
-    (validData) => createProducts(validData)
-  );
-}
-```
-
-### Routes
-
-```typescript
-import { Router } from 'express';
-import { createProductsHandler } from './products.handler.js';
-import { authenticateToken } from '../../shared/jwt.utils.js';
-
-const router = Router();
-
-/**
- * @route POST /api/products
- * @desc Create new products
- */
-router.post('/', authenticateToken, createProductsHandler);
-
-export default router;
-```
-
-## Scripts in the Generated Project
+## Development (this repo)
 
 ```bash
-npm run dev     # nodemon + tsx (hot reload)
-npm run build   # tsc
-npm start       # node dist/index.js
+npm run dev        # tsx watch
+npm test           # vitest
+npm run typecheck
+npm run build
 ```
 
 ## Katax Ecosystem

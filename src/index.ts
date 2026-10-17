@@ -14,9 +14,6 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { initCommand } from "./commands/init.js";
 import { addEndpointCommand } from "./commands/add-endpoint.js";
-import { generateCrudCommand } from "./commands/generate-crud.js";
-import { generateRepositoryCommand } from "./commands/generate-repository.js";
-import { generateDocsCommand } from "./commands/generate-docs.js";
 import { infoCommand } from "./commands/info.js";
 import {
   deployInitCommand,
@@ -25,11 +22,6 @@ import {
   deployLogsCommand,
   deployStatusCommand,
 } from "./commands/deploy.js";
-import {
-  fixDocsCommand,
-  fixAllCommand,
-  listFixesCommand,
-} from "./commands/fix.js";
 import { setVerbose, setColorMode } from "./utils/logger.js";
 
 // Get version from package.json
@@ -59,6 +51,7 @@ program
   .option("--pm <manager>", "Package manager to use (npm|pnpm)")
   .option("--ignore-scripts", "Install dependencies with --ignore-scripts")
   .option("--write-npmrc", "Write .npmrc with ignore-scripts=true")
+  .option("--no-install", "Don't install dependencies")
   .action(initCommand);
 
 // Add command - Add resources to project
@@ -66,16 +59,34 @@ const addCommand = program
   .command("add")
   .description("Add resources to your project");
 
-addCommand
-  .command("endpoint <name>")
-  .description("Add a new endpoint with validation")
-  .option(
-    "-m, --method <method>",
-    "HTTP method (GET, POST, PUT, DELETE)",
-    "POST",
-  )
-  .option("-p, --path <path>", "Route path")
-  .action(addEndpointCommand);
+function withEndpointOptions(command: Command): Command {
+  return command
+    .option(
+      "--methods <list>",
+      "Operations to generate: list,get,create,update,delete (default: all)",
+    )
+    .option("--id <type>", "Id type: uuid (default), number or string")
+    .option(
+      "--fields <spec>",
+      'Fields, e.g. "name:string, price:number?, starts_on:date, status:enum(draft|done)" (? = optional)',
+    )
+    .option("--table <name>", "SQL table name (default: snake_case of the resource)")
+    .option("--singular <name>", "Singular name when the automatic one is wrong (e.g. --singular person)")
+    .option("--public", "Mount before requireAuth: no userId, no ownership checks")
+    .option("--no-repository", "Don't generate repository/table (controllers left to implement)")
+    .option("--no-interactive", "Never prompt (uses name:string when --fields is missing)")
+    .option("-d, --dry-run", "Show what would be created/changed without writing")
+    .option("-f, --force", "Overwrite existing resource files");
+}
+
+withEndpointOptions(
+  addCommand
+    .command("endpoint <path>")
+    .description(
+      "Add a resource: validator, types, repository, controller, handler, routes (+ row type, migration, routes.ts). " +
+        "Examples: habits | admin/users | habits/:habitId/reminders",
+    ),
+).action(addEndpointCommand);
 
 // Generate command - Generate complete resources
 const generateCommand = program
@@ -83,28 +94,11 @@ const generateCommand = program
   .aliases(["gen", "g"])
   .description("Generate complete resources");
 
-generateCommand
-  .command("crud <resource-name>")
-  .description("Generate a complete CRUD resource")
-  .option("--no-auth", "Skip authentication middleware")
-  .action(generateCrudCommand);
-
-generateCommand
-  .command("repository <name>")
-  .description("Generate a repository scaffold")
-  .action(generateRepositoryCommand);
-
-generateCommand
-  .command("docs")
-  .description("Generate API documentation (Swagger/OpenAPI)")
-  .option("-f, --force", "Force regenerate (overwrite existing)")
-  .option("-o, --output <path>", "Output path for OpenAPI spec")
-  .option("-p, --port <port>", "Server port for documentation URL")
-  .option(
-    "-u, --url <url>",
-    "Production server URL (e.g., https://api.example.com)",
-  )
-  .action(generateDocsCommand);
+withEndpointOptions(
+  generateCommand
+    .command("crud <path>")
+    .description("Alias of `katax add endpoint`"),
+).action(addEndpointCommand);
 
 // Deploy command - PM2 deployment on Ubuntu VPS
 const deployCommand = program
@@ -153,27 +147,6 @@ deployCommand
   .description("Show PM2 applications status")
   .action(deployStatusCommand);
 
-// Fix command - Patch existing projects
-const fixCommand = program
-  .command("fix")
-  .description("Apply fixes to existing projects");
-
-fixCommand
-  .command("docs")
-  .description("Fix API documentation for production (copy openapi.json)")
-  .option("--skip-install", "Skip npm install after patching")
-  .action(fixDocsCommand);
-
-fixCommand
-  .command("all")
-  .description("Apply all available fixes")
-  .option("--skip-install", "Skip npm install after patching")
-  .action(fixAllCommand);
-
-fixCommand
-  .command("list")
-  .description("List all available fixes")
-  .action(listFixesCommand);
 
 // Info command - Show project structure
 program
@@ -206,17 +179,17 @@ ${chalk.bold("Examples:")}
   ${chalk.gray("# Initialize a new API project")}
   $ katax init my-api
 
-  ${chalk.gray("# Add a single endpoint")}
-  $ katax add endpoint users
+  ${chalk.gray("# Add a CRUD resource (validator, types, repository, controller, handler, routes, migration)")}
+  $ katax add endpoint habits --fields "name:string, note:text?, status:enum(active|paused)"
 
-  ${chalk.gray("# Generate a complete CRUD resource")}
-  $ katax generate crud products
+  ${chalk.gray("# Sub-resource and nested path")}
+  $ katax add endpoint habits/:habitId/reminders --fields "time:string, enabled:boolean"
+  $ katax add endpoint admin/user-roles
 
-  ${chalk.gray("# Generate a repository scaffold")}
-  $ katax generate repository products
+  ${chalk.gray("# Public, read-only resource; preview without writing")}
+  $ katax add endpoint news --public --methods list,get --dry-run
 
-  ${chalk.gray("# Generate API documentation")}
-  $ katax generate docs
+  ${chalk.gray("# OpenAPI docs are always on: http://localhost:3000/docs")}
 
   ${chalk.gray("# View project structure")}
   $ katax info

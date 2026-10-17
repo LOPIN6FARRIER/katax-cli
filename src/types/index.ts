@@ -1,85 +1,34 @@
 export interface ProjectConfig {
   name: string;
-  description?: string;
-  type: "rest-api" | "graphql";
-  typescript: boolean;
-  database?: "postgresql" | "mysql" | "mongodb" | "none";
-  authentication?: "jwt" | "none";
-  validation: "katax-core" | "none";
-  swagger?: boolean;
-  orm?: "none" | "prisma" | "typeorm";
+  description: string;
   port: number;
-  useKataxServiceManager?: boolean;
-  kataxMode?: "singleton" | "instance";
-  useRedis?: boolean;
-  useWebSocket?: boolean;
-  useSeparateSocketPort?: boolean;
-  socketPort?: number;
-  useRegistry?: boolean;
-  registryMode?: "none" | "url" | "handler";
-  registryUrl?: string;
-  peerDependenciesMode?: "none" | "selected" | "all";
-  packageManager?: "npm" | "pnpm";
-  ignoreInstallScripts?: boolean;
-  createNpmrcForIgnoreScripts?: boolean;
-  useLifecycleHooks?: boolean;
-  initGit?: boolean;
-  redisConfig?: {
-    host?: string;
-    port?: string;
-    password?: string;
-    db?: string;
-  };
+  database: "postgresql" | "none";
   dbConfig?: {
     host?: string;
     port?: string;
     user?: string;
     password?: string;
     database?: string;
-    useAuth?: boolean;
   };
-}
-
-export interface EndpointConfig {
-  name: string;
-  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  path: string;
-  addValidation: boolean;
-  fields?: FieldConfig[];
-  addAsyncValidators: boolean;
-  dbOperations?: ("create" | "read" | "update" | "delete")[];
-}
-
-export interface FieldConfig {
-  name: string;
-  type: "string" | "number" | "boolean" | "date" | "email" | "array" | "object";
-  required: boolean;
-  rules?: ValidationRule[];
-  asyncValidator?: {
-    type: "unique" | "exists" | "custom";
-    table?: string;
-    column?: string;
-    message?: string;
+  useRedis: boolean;
+  redisConfig?: {
+    host?: string;
+    port?: string;
+    password?: string;
+    db?: string;
   };
-}
-
-export interface ValidationRule {
-  type:
-    | "minLength"
-    | "maxLength"
-    | "min"
-    | "max"
-    | "email"
-    | "regex"
-    | "oneOf"
-    | "custom";
-  value?: unknown;
-  message?: string;
-}
-
-export interface CRUDConfig {
-  resourceName: string;
-  tableName?: string;
-  fields: FieldConfig[];
-  addAuth: boolean;
+  authentication: "jwt" | "none";
+  useWebSocket: boolean;
+  useSeparateSocketPort: boolean;
+  socketPort: number;
+  useRegistry: boolean;
+  registryMode: "none" | "url" | "handler";
+  registryUrl?: string;
+  useLifecycleHooks: boolean;
+  /** Print the endpoint map when the server starts (shared/startup-routes.utils.ts). */
+  listRoutes: boolean;
+  packageManager: "npm" | "pnpm";
+  ignoreInstallScripts: boolean;
+  createNpmrcForIgnoreScripts: boolean;
+  initGit: boolean;
 }
