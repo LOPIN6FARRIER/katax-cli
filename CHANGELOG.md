@@ -1,8 +1,15 @@
 # Changelog - Katax CLI
 
-## [1.5.2] - 2026-08-06
+## [1.6.2]
 
-Current published version. Entries between 1.4.3 and 1.5.2 were not individually tracked in this file — see README.md for the current, accurate command reference (`init`, `add endpoint`, `generate crud/repository/docs`, `deploy init/update/rollback/logs/status`, `fix docs/all/list`, `info`).
+Current version (see `package.json`). Entries between 1.4.3 and 1.6.2 were not individually tracked in this file; README.md has the current, verified command reference (`init`, `add endpoint`, `generate crud/repository/docs`, `deploy init/update/rollback/logs/status`, `fix docs/all/list`, `info`).
+
+Current behavior worth knowing (not dated to a specific release):
+- Generated projects pin `katax-core ^1.6.5` and `katax-service-manager ^0.6.0`, and the CLI reports newer releases of katax-cli, katax-core and katax-service-manager (cached for a day).
+- Resource names are validated (`[a-z0-9_-]` per segment) so `add endpoint` / `generate crud` / `generate repository` cannot write outside `src/api/`.
+- `generate crud` only wires `authenticateToken` when `src/shared/jwt.utils.ts` exists.
+- `katax generate repository` generates a katax-service-manager data-access class.
+- JWT projects use `bcryptjs` instead of `bcrypt` (no native build step).
 
 ## [1.4.2] - 2026-04-02
 
