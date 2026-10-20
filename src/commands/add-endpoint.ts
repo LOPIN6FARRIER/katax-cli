@@ -83,6 +83,27 @@ export function parseIdType(value: string | undefined): IdType {
   throw new Error(`Unknown --id "${value}". Use uuid (default), number or string`);
 }
 
+const METHOD_CHOICES: Array<{ name: string; value: ResourceMethod }> = [
+  { name: "list    GET    /resource", value: "list" },
+  { name: "get     GET    /resource/:id", value: "get" },
+  { name: "create  POST   /resource", value: "create" },
+  { name: "update  PATCH  /resource/:id", value: "update" },
+  { name: "delete  DELETE /resource/:id", value: "delete" },
+];
+
+async function promptMethods(): Promise<Set<ResourceMethod>> {
+  const { methods } = await inquirer.prompt<{ methods: ResourceMethod[] }>([
+    {
+      type: "checkbox",
+      name: "methods",
+      message: "Operations to generate (space to toggle, enter to confirm):",
+      choices: METHOD_CHOICES.map((c) => ({ ...c, short: c.value, checked: true })),
+      validate: (selected: ResourceMethod[]) => selected.length > 0 || "Pick at least one operation",
+    },
+  ]);
+  return new Set(methods);
+}
+
 async function promptFields(reserved: string[]): Promise<FieldSpec[]> {
   info("Define the fields (press Enter on an empty name to finish).");
   gray(`  Types: ${FIELD_TYPES.filter((t) => t !== "enum").join(", ")}, enum(a|b)\n`);
@@ -233,19 +254,21 @@ export async function addEndpointCommand(input: string, options: AddEndpointOpti
     if (!pkg) throw new Error("No package.json here. Run this command from your project root.");
 
     const naming = resolveResourceNaming(input, { singular: options.singular, table: options.table, cwd });
-    const methods = parseMethods(options.methods);
+    title(`🎯 katax add endpoint ${input}`);
+
+    const interactive = options.interactive !== false && Boolean(process.stdin.isTTY);
+    const methods =
+      options.methods === undefined && interactive ? await promptMethods() : parseMethods(options.methods);
     const idType = parseIdType(options.id);
     const isPublic = Boolean(options.public);
     const withRepository = options.repository !== false;
     const needsFields = methods.has("create") || methods.has("update");
     const reserved = naming.parents.map((p) => p.column);
 
-    title(`🎯 katax add endpoint ${input}`);
-
     let fields: FieldSpec[] = [];
     if (options.fields !== undefined) {
       fields = parseFieldsSpec(options.fields, reserved);
-    } else if (needsFields && options.interactive !== false && process.stdin.isTTY) {
+    } else if (needsFields && interactive) {
       fields = await promptFields(reserved);
     }
     if (fields.length === 0 && needsFields) {

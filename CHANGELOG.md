@@ -1,5 +1,15 @@
 # Changelog - Katax CLI
 
+## [1.7.1] - 2026-10-19
+
+### Added
+- `katax add endpoint` asks which operations to generate (checklist, all selected) when `--methods` is omitted in
+  interactive mode. `--no-interactive` keeps generating all five.
+- `katax generate endpoint <path>` (`katax gen endpoint`), same as `add endpoint`; `gen crud` still works.
+
+### Fixed
+- `bin` path without `./` (npm 11 publish warning).
+
 ## [1.7.0] - 2026-10-17
 
 ### Changed

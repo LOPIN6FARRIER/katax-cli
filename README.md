@@ -61,8 +61,9 @@ Always included (no prompt): katax-core validation, katax-service-manager (singl
 
 ### `katax add endpoint <path>`
 
-Alias: `katax generate crud <path>` (`katax g crud`). Not interactive unless `--fields` is missing and you are
-in a terminal.
+Same command: `katax gen endpoint <path>` (also `katax gen crud`). In a terminal, it asks what you didn't pass:
+a checklist of operations (all selected) when `--methods` is missing, and the fields when `--fields` is missing.
+`--no-interactive` skips the questions (all operations, `name:string`).
 
 ```bash
 katax add endpoint habits                                   # /api/habits
@@ -219,7 +220,7 @@ client gets a generic 500. A validator that fails (DB down) answers 500, not 422
 
 - `katax generate repository`, `katax generate docs` and `katax fix` were removed (repositories come with
   `add endpoint`; docs are built at runtime).
-- `add endpoint` / `generate crud` no longer prompt for methods and auth: use the options above.
+- `add endpoint` no longer prompts for auth: private by default, `--public` to opt out.
 - Older projects: `add endpoint` creates the missing shared files, but an old `shared/api.utils.ts` must be
   updated by hand (it warns which exports are missing: `toSafeErrorResult`, `validateComposed`).
 

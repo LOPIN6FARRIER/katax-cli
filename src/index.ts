@@ -96,8 +96,9 @@ const generateCommand = program
 
 withEndpointOptions(
   generateCommand
-    .command("crud <path>")
-    .description("Alias of `katax add endpoint`"),
+    .command("endpoint <path>")
+    .alias("crud")
+    .description("Same as `katax add endpoint` (also: katax gen crud)"),
 ).action(addEndpointCommand);
 
 // Deploy command - PM2 deployment on Ubuntu VPS
@@ -181,6 +182,9 @@ ${chalk.bold("Examples:")}
 
   ${chalk.gray("# Add a CRUD resource (validator, types, repository, controller, handler, routes, migration)")}
   $ katax add endpoint habits --fields "name:string, note:text?, status:enum(active|paused)"
+
+  ${chalk.gray("# Pick only some operations (interactive mode shows a checklist when --methods is omitted)")}
+  $ katax gen endpoint news --methods list,get
 
   ${chalk.gray("# Sub-resource and nested path")}
   $ katax add endpoint habits/:habitId/reminders --fields "time:string, enabled:boolean"
