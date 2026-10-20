@@ -127,69 +127,39 @@ katax info
 ```
 
 
-### `katax deploy init`
+### `katax deploy` (on the server, with PM2)
 
-Initial PM2 deployment to Ubuntu VPS.
+All deploy commands run **on the VPS**. They need git and PM2 (`npm i -g pm2`); pnpm/yarn when the repo's
+lockfile says so (`corepack enable`).
 
-Interactive prompts: app name, repo (HTTPS/SSH), repo URL, branch, install path, instances, max memory, environment variables.
-
-Clones repo, installs deps, builds, creates PM2 ecosystem config, starts with PM2.
-
-**Example:**
 ```bash
-katax deploy init
+katax deploy init                 # first time: asks repo URL, branch, parent folder, folder name
+cd ~/apps/my-api
+katax deploy update               # pull (fast-forward), install, build, pm2 reload
+katax deploy update -y            # same, no confirmation (scripts, CI)
+katax deploy update --hard        # discard local changes on the server first
+katax deploy rollback -c 2 -y     # back 2 commits, rebuild, reload
+katax deploy logs -f              # pm2 logs (default 50 lines)
+katax deploy status               # pm2 list
 ```
 
-### `katax deploy update`
+`init`:
 
-Pull changes and restart.
+- Clones the repo, then uses the repo's `ecosystem.config.cjs` (the one `katax init` creates: fork mode, 1
+  instance, which in-memory rate limits, Socket.IO and cron need). Only without one does it ask the app name,
+  instances and memory and write an untracked one.
+- `.env` is gitignored, so it offers to create it from `.env.example`: asks each value, sets
+  `NODE_ENV=production`, generates random values for `*SECRET*` keys left as `change-me`, writes it with
+  permissions 600.
+- Installs with the lockfile's package manager (devDependencies included, TypeScript is needed to build),
+  builds, `pm2 start` + `pm2 save`, writes `.katax-deploy.json` (gitignored).
+- Lists the SQL migrations: they are never applied automatically.
 
-**Options:**
-- `-b, --branch <branch>` - Branch to deploy
-- `--hard` - Hard reset (discard local changes)
-- `-a, --app-name <name>` - PM2 app name
+`update`: fails instead of merging if the server has diverged (use `--hard`); `pm2 reload --update-env` keeps the
+previous build serving if the build fails; lists new or changed files in `migrations/`.
 
-**Example:**
-```bash
-katax deploy update
-katax deploy update --hard -b main
-```
-
-### `katax deploy rollback`
-
-Rollback to previous version.
-
-**Options:**
-- `-c, --commits <number>` - Number of commits (default: 1)
-- `-a, --app-name <name>` - PM2 app name
-
-**Example:**
-```bash
-katax deploy rollback -c 2
-```
-
-### `katax deploy logs`
-
-View PM2 logs.
-
-**Options:**
-- `-l, --lines <number>` - Number of lines
-- `-f, --follow` - Follow mode
-- `-a, --app-name <name>` - PM2 app name
-
-**Example:**
-```bash
-katax deploy logs -f
-```
-
-### `katax deploy status`
-
-Show PM2 apps status.
-
-**Example:**
-```bash
-katax deploy status
-```
+App name (update, rollback, logs): `--app-name`, then `.katax-deploy.json`, then the PM2 app running from this
+exact folder, then the folder name.
 
 ## API docs (OpenAPI 3.1)
 

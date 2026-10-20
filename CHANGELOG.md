@@ -7,8 +7,26 @@
   interactive mode. `--no-interactive` keeps generating all five.
 - `katax generate endpoint <path>` (`katax gen endpoint`), same as `add endpoint`; `gen crud` still works.
 
+- `katax -h` lists the endpoint options.
+
+### Changed
+- `katax deploy` reworked for projects created by `katax init`:
+  - `init` uses the repo's `ecosystem.config.cjs` instead of overwriting it (it was replaced by a cluster/`max`
+    config, which breaks in-memory rate limits, Socket.IO and cron, and left the tracked file modified so later
+    pulls failed). Without one, it writes an untracked config: fork, 1 instance by default.
+  - `init` offers to create `.env` from `.env.example` (production mode, random secrets, permissions 600).
+  - Install with the lockfile's package manager (pnpm/yarn/npm), devDependencies included.
+  - `update` uses `git merge --ff-only` and `pm2 reload --update-env`; `-y/--yes` on `update` and `rollback`
+    (without a terminal it fails instead of hanging).
+  - New or changed SQL migrations are listed after `init`/`update` (never applied automatically).
+  - Clear error output when a step fails.
+
 ### Fixed
 - `bin` path without `./` (npm 11 publish warning).
+- `deploy update/rollback/logs` could pick another PM2 app whose folder starts with the same name
+  (`/apps/api` matched `/apps/api-v2`).
+- `deploy rollback -c` validates the number of commits.
+- Generated `.gitignore` includes `logs/` and `.katax-deploy.json`.
 
 ## [1.7.0] - 2026-10-17
 

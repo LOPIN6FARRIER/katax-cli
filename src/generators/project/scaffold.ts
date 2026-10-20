@@ -434,7 +434,9 @@ dist/
 .env
 .DS_Store
 *.log
+logs/
 coverage/
+.katax-deploy.json
 `;
 
 export const GITATTRIBUTES = `# LF everywhere (the API is deployed on Linux)

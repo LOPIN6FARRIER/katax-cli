@@ -57,7 +57,7 @@ program
 // Add command - Add resources to project
 const addCommand = program
   .command("add")
-  .description("Add resources to your project");
+  .description("Add a resource: katax add endpoint <path> [options]");
 
 function withEndpointOptions(command: Command): Command {
   return command
@@ -92,7 +92,7 @@ withEndpointOptions(
 const generateCommand = program
   .command("generate")
   .aliases(["gen", "g"])
-  .description("Generate complete resources");
+  .description("Same as add: katax gen endpoint <path> [options]");
 
 withEndpointOptions(
   generateCommand
@@ -108,46 +108,38 @@ const deployCommand = program
 
 deployCommand
   .command("init")
-  .description("Initial deployment - Clone repo and setup PM2")
+  .description("First deploy on the server: clone, .env from .env.example, install, build, start with PM2")
   .action(deployInitCommand);
 
 deployCommand
   .command("update")
-  .description("Update existing deployment - Pull changes and restart")
+  .description("Run inside the app folder: pull (fast-forward), install, build, pm2 reload")
   .option("-b, --branch <branch>", "Branch to deploy (default: current branch)")
-  .option("--hard", "Hard reset - discard all local changes")
-  .option(
-    "-a, --app-name <name>",
-    "PM2 application name (overrides .katax-deploy.json)",
-  )
+  .option("--hard", "Discard local changes on the server (git reset --hard origin/<branch>)")
+  .option("-a, --app-name <name>", "PM2 app name (default: .katax-deploy.json, then PM2, then folder name)")
+  .option("-y, --yes", "Don't ask for confirmation (CI, scripts)")
   .action(deployUpdateCommand);
 
 deployCommand
   .command("rollback")
-  .description("Rollback to previous version")
-  .option("-c, --commits <number>", "Number of commits to rollback", "1")
-  .option(
-    "-a, --app-name <name>",
-    "PM2 application name (overrides .katax-deploy.json)",
-  )
+  .description("Go back N commits, rebuild and reload (migrations are not reverted)")
+  .option("-c, --commits <number>", "Number of commits to roll back", "1")
+  .option("-a, --app-name <name>", "PM2 app name")
+  .option("-y, --yes", "Don't ask for confirmation")
   .action(deployRollbackCommand);
 
 deployCommand
   .command("logs")
-  .description("View PM2 application logs")
-  .option("-l, --lines <number>", "Number of lines to display")
-  .option("-f, --follow", "Follow log output")
-  .option(
-    "-a, --app-name <name>",
-    "PM2 application name (overrides .katax-deploy.json)",
-  )
+  .description("Show PM2 logs of the app")
+  .option("-l, --lines <number>", "Number of lines", "50")
+  .option("-f, --follow", "Keep streaming")
+  .option("-a, --app-name <name>", "PM2 app name")
   .action(deployLogsCommand);
 
 deployCommand
   .command("status")
-  .description("Show PM2 applications status")
+  .description("pm2 list")
   .action(deployStatusCommand);
-
 
 // Info command - Show project structure
 program
@@ -176,6 +168,19 @@ program.showSuggestionAfterError(true);
 program.addHelpText(
   "after",
   `
+${chalk.bold("Endpoint options")} ${chalk.gray("(katax add endpoint <path> / katax gen endpoint <path>)")}${chalk.bold(":")}
+  --methods <list>     list,get,create,update,delete (default: all; asks with a checklist if omitted)
+  --fields <spec>      "name:string, price:number?, status:enum(a|b)" (asks if omitted)
+                       types: string, text, int, number, boolean, date, datetime, email, uuid, enum(a|b)
+  --id <type>          uuid (default), number or string
+  --public             no auth: mounted before requireAuth
+  --table <name>       SQL table (default: snake_case of the resource)
+  --singular <name>    singular when the automatic one is wrong
+  --no-repository      skip repository, row type and migration
+  --no-interactive     never ask (all operations, name:string)
+  -d, --dry-run        show what would change without writing
+  -f, --force          overwrite existing files
+
 ${chalk.bold("Examples:")}
   ${chalk.gray("# Initialize a new API project")}
   $ katax init my-api
@@ -202,6 +207,7 @@ ${chalk.bold("Examples:")}
   $ katax deploy init                    # First time deployment
   $ katax deploy update                  # Update existing deployment
   $ katax deploy update --hard           # Hard reset and update
+  $ katax deploy update -y               # No confirmation (scripts, CI)
   $ katax deploy update -a my-api-prod   # Specify PM2 app name
   $ katax deploy status                  # Check PM2 status
   $ katax deploy logs -f                 # Follow logs
